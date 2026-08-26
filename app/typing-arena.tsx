@@ -7,11 +7,14 @@ import {
   arenaRequest,
   githubAuthEnabled,
   googleAuthEnabled,
-  signIn,
-  signInWithEmail,
+  signInWithPassword,
+  signInWithProvider,
+  signUpWithPassword,
   supabase,
+  turnstileSiteKey,
   userDisplayName,
 } from './lib/supabase-browser';
+import { TurnstileWidget } from './turnstile-widget';
 
 type Status = 'ready' | 'running' | 'finished';
 type Submission = 'idle' | 'local' | 'verifying' | 'accepted' | 'review' | 'rejected' | 'error';
@@ -20,6 +23,7 @@ type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: numbe
 type VerifiedResult = { grossWpm: number; accuracy: number; score: number; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
+type AuthMode = 'signin' | 'signup';
 
 const CHALLENGE_DURATION_MS = 60_000;
 
@@ -43,7 +47,11 @@ export function TypingArena() {
   const [user, setUser] = useState<ArenaUser | null>(null);
   const [authMenuOpen, setAuthMenuOpen] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
-  const [authEmail, setAuthEmail] = useState('');
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const attemptRef = useRef<Promise<RankedAttempt | null> | null>(null);
@@ -213,28 +221,39 @@ export function TypingArena() {
     setAuthBusy(true);
     setAuthMessage(null);
     try {
-      await signIn(provider);
+      await signInWithProvider(provider);
     } catch {
       setAuthMessage('Este provedor ainda não está disponível. Use o link por e-mail.');
       setAuthBusy(false);
     }
   }, []);
 
-  const beginEmailSignIn = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCaptchaToken = useCallback((token: string | null) => setCaptchaToken(token), []);
+
+  const beginPasswordAuth = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!authEmail.trim()) return;
+    if (!authUsername.trim() || !authPassword || !captchaToken || !turnstileSiteKey) return;
     setAuthBusy(true);
     setAuthMessage(null);
     try {
-      await signInWithEmail(authEmail.trim());
-      setAuthMessage('Link enviado. Confira sua caixa de entrada para entrar no ranking.');
-      setAuthEmail('');
+      if (authMode === 'signup') {
+        await signUpWithPassword(authUsername, authPassword, captchaToken);
+        setAuthMessage('Conta criada. Você já está participando do ranking.');
+      } else {
+        await signInWithPassword(authUsername, authPassword, captchaToken);
+        setAuthMessage('Entrada realizada com sucesso.');
+      }
+      setAuthPassword('');
     } catch {
-      setAuthMessage('Não foi possível enviar o link agora. Tente novamente em instantes.');
+      setAuthMessage(authMode === 'signup'
+        ? 'Não foi possível criar a conta. Confira o usuário, a senha e tente outro nome.'
+        : 'Usuário, senha ou verificação inválidos.');
     } finally {
       setAuthBusy(false);
+      setCaptchaToken(null);
+      setCaptchaResetSignal((value) => value + 1);
     }
-  }, [authEmail]);
+  }, [authMode, authPassword, authUsername, captchaToken]);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -307,11 +326,19 @@ export function TypingArena() {
               <button type="button" disabled={authBusy} onClick={() => void signOut()}>Sair</button>
             </> : <>
               <small>ENTRAR NO RANKING</small>
-              <form onSubmit={(event) => void beginEmailSignIn(event)}>
-                <label htmlFor="ranking-email">E-mail</label>
-                <input id="ranking-email" type="email" autoComplete="email" required value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="voce@exemplo.com" disabled={authBusy || !arenaBackendConfigured} />
-                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>Receber link de acesso</button>
+              <div className="auth-tabs" role="tablist" aria-label="Acesso ao ranking">
+                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Entrar</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Criar conta</button>
+              </div>
+              <form onSubmit={(event) => void beginPasswordAuth(event)}>
+                <label htmlFor="ranking-username">Nome de usuário</label>
+                <input id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}" required value={authUsername} onChange={(event) => setAuthUsername(event.target.value)} placeholder="ex.: ana.cerrado" disabled={authBusy || !arenaBackendConfigured} />
+                <label htmlFor="ranking-password">Senha</label>
+                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="Mínimo de 10 caracteres" disabled={authBusy || !arenaBackendConfigured} />
+                <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
+                <button type="submit" disabled={authBusy || !arenaBackendConfigured || !captchaToken || !turnstileSiteKey}>{authMode === 'signup' ? 'Criar conta' : 'Entrar'}</button>
               </form>
+              <p>Sem e-mail. Se perder a senha, crie outra conta.</p>
               {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">ou continue com</span>}
               {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>}
               {githubAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>}

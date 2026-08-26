@@ -8,6 +8,7 @@ const functionsUrl = process.env.NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL
 export const arenaBackendConfigured = Boolean(supabaseUrl && publishableKey && functionsUrl);
 export const googleAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH === 'true';
 export const githubAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_GITHUB_AUTH === 'true';
+export const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
 
 export const supabase = arenaBackendConfigured
   ? createClient(supabaseUrl, publishableKey, {
@@ -26,7 +27,7 @@ export function userDisplayName(user: User) {
   return `Participante ${user.id.slice(0, 4).toUpperCase()}`;
 }
 
-export async function signIn(provider: Extract<Provider, 'google' | 'github'>) {
+export async function signInWithProvider(provider: Extract<Provider, 'google' | 'github'>) {
   if (!supabase) throw new Error('backend_not_configured');
   const { error } = await supabase.auth.signInWithOAuth({
     provider,
@@ -35,14 +36,27 @@ export async function signIn(provider: Extract<Provider, 'google' | 'github'>) {
   if (error) throw error;
 }
 
-export async function signInWithEmail(email: string) {
+export async function signUpWithPassword(username: string, password: string, captchaToken: string) {
   if (!supabase) throw new Error('backend_not_configured');
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
+  const normalizedUsername = normalizeUsername(username);
+  const { data, error } = await supabase.auth.signUp({
+    email: accountEmail(normalizedUsername),
+    password,
     options: {
-      emailRedirectTo: cleanRedirectUrl(),
-      shouldCreateUser: true,
+      captchaToken,
+      data: { name: normalizedUsername, username: normalizedUsername },
     },
+  });
+  if (error) throw error;
+  if (!data.session) throw new Error('signup_requires_confirmation');
+}
+
+export async function signInWithPassword(username: string, password: string, captchaToken: string) {
+  if (!supabase) throw new Error('backend_not_configured');
+  const { error } = await supabase.auth.signInWithPassword({
+    email: accountEmail(normalizeUsername(username)),
+    password,
+    options: { captchaToken },
   });
   if (error) throw error;
 }
@@ -52,6 +66,16 @@ function cleanRedirectUrl() {
   redirectTo.search = '';
   redirectTo.hash = '';
   return redirectTo.toString();
+}
+
+function normalizeUsername(username: string) {
+  const normalized = username.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{2,23}$/.test(normalized)) throw new Error('invalid_username');
+  return normalized;
+}
+
+function accountEmail(username: string) {
+  return `${username}@users.lapig-type.invalid`;
 }
 
 export async function arenaRequest(

@@ -12,7 +12,8 @@ O site é uma exportação estática do Next.js publicada no GitHub Pages. Login
 - colar, recortar e copiar o campo de treino é bloqueado;
 - velocidade, precisão, tempo restante e erros são atualizados durante a sessão;
 - o desafio termina ao fim de um minuto, sem exigir que o artigo seja concluído;
-- visitantes podem treinar sem conta; resultados competitivos exigem autenticação;
+- visitantes podem treinar sem conta; resultados competitivos exigem usuário e senha;
+- o cadastro não exige e-mail e é protegido contra automação pelo Cloudflare Turnstile;
 - cada publicação aparece com referência ABNT e link DOI para a fonte.
 
 Os três textos de treino reúnem excertos dos artigos científicos indicados na própria interface. O conteúdo permanece no idioma original; somente sinais tipográficos foram normalizados para permitir reprodução consistente pelo teclado. Antes de um lançamento institucional, a curadoria ainda deve registrar a licença ou autorização e a aprovação do LAPIG para cada passagem.
@@ -35,9 +36,9 @@ Nenhum ranking de navegador é inviolável: um atacante dedicado controla o clie
 
 ```text
 GitHub Pages (interface pública)
-        │ OAuth + HTTPS
+        │ Supabase Auth + HTTPS
         ▼
-Supabase Auth ── identidade Google/GitHub
+Supabase Auth ── usuário, senha e Turnstile
         │ JWT validado no servidor
         ▼
 Supabase Edge Functions ── validação e recálculo do score
@@ -46,7 +47,9 @@ Supabase Edge Functions ── validação e recálculo do score
 Supabase PostgreSQL ── profiles, attempts e results
 ```
 
-- A sessão de login é administrada pelo SDK oficial do Supabase e persistida no armazenamento local do navegador com renovação automática. O acesso por link enviado ao e-mail funciona sem conta ChatGPT; Google e GitHub podem ser habilitados como provedores adicionais.
+- A sessão de login é administrada pelo SDK oficial do Supabase e persistida no armazenamento local do navegador com renovação automática. O usuário é convertido em um identificador técnico interno; não há e-mail, SMTP ou conta ChatGPT.
+- A criação e a entrada em contas exigem um token válido do Cloudflare Turnstile. A chave secreta permanece somente no Supabase; o GitHub Pages recebe apenas a chave pública do widget.
+- Sem endereço de e-mail, não há recuperação automática de senha. Uma pessoa que perder a senha deverá criar outra conta.
 - A chave `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` é pública por definição. A `service_role` nunca entra no bundle ou no GitHub Pages.
 - As tabelas têm RLS e não podem ser lidas ou alteradas diretamente por visitantes autenticados ou anônimos.
 - O placar público é produzido pela função `leaderboard`, que retorna apenas nome público e melhor resultado aceito de cada pessoa.
@@ -74,8 +77,8 @@ Copie `.env.example` para `.env.local` e preencha os valores mostrados por `npx 
 2. Vincule o repositório com `npx supabase link --project-ref SEU_PROJECT_REF`.
 3. Aplique o banco com `npx supabase db push`.
 4. Publique as funções com `npx supabase functions deploy`.
-5. No Supabase Auth, habilite Google e/ou GitHub e autorize `https://victorgit10.github.io/lapig-type/` como URL de redirecionamento.
-6. Nas variáveis do repositório GitHub, cadastre `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` e, opcionalmente, `NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL`.
+5. Crie um widget Turnstile para `victorgit10.github.io`, habilite essa proteção no Supabase Auth e mantenha a confirmação de e-mail desativada.
+6. Nas variáveis do repositório GitHub, cadastre `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` e, opcionalmente, `NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL`.
 7. Em **Settings → Pages**, selecione **GitHub Actions** como fonte. O workflow em `.github/workflows/deploy-pages.yml` testa, exporta e publica o site a cada alteração em `main`.
 
 O projeto Supabase hospedado, os provedores OAuth e a visibilidade pública do repositório exigem configuração nas contas dos respectivos serviços. Não publique `SUPABASE_SERVICE_ROLE_KEY`, senha do banco ou tokens pessoais como variáveis `NEXT_PUBLIC_*`.
