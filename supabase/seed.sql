@@ -1,0 +1,1 @@
+-- Intentionally empty. Competitive results are never seeded.
