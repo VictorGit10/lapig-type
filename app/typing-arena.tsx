@@ -264,7 +264,7 @@ export function TypingArena() {
   }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished') return;
+    if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished' || authMenuOpen) return;
     if (event.key === 'Tab') return;
     event.preventDefault();
     if (event.key.length !== 1) return;
@@ -307,7 +307,7 @@ export function TypingArena() {
   const rankingRows = leaderboard ?? previewLeaderboard;
 
   return (
-    <main className="site-shell" onClick={focusInput}>
+    <main className="site-shell" onClick={() => { if (!authMenuOpen) focusInput(); }}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="LAPIG Type — início">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
@@ -381,7 +381,12 @@ export function TypingArena() {
               className="typing-input"
               aria-label="Campo de digitação. Comece a digitar o texto exibido."
               autoCapitalize="off" autoComplete="off" autoCorrect="off"
-              onBlur={() => status !== 'finished' && window.setTimeout(focusInput, 80)}
+              onBlur={(event) => {
+                if (status === 'finished' || authMenuOpen) return;
+                const next = event.relatedTarget as HTMLElement | null;
+                if (next && next.closest('.auth-control')) return;
+                window.setTimeout(focusInput, 80);
+              }}
               onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()}
               onKeyDown={handleKeyDown} onPaste={(event) => event.preventDefault()}
               spellCheck={false} value="" onChange={() => undefined}
