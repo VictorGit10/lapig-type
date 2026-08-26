@@ -5,6 +5,8 @@ import { passages, previewLeaderboard } from './content';
 import {
   arenaBackendConfigured,
   arenaRequest,
+  githubAuthEnabled,
+  googleAuthEnabled,
   signIn,
   signInWithEmail,
   supabase,
@@ -277,9 +279,9 @@ export function TypingArena() {
                 <input id="ranking-email" type="email" autoComplete="email" required value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="voce@exemplo.com" disabled={authBusy || !arenaBackendConfigured} />
                 <button type="submit" disabled={authBusy || !arenaBackendConfigured}>Receber link de acesso</button>
               </form>
-              <span className="auth-divider">ou continue com</span>
-              <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>
-              <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>
+              {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">ou continue com</span>}
+              {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>}
+              {githubAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>}
               {authMessage && <p role="status">{authMessage}</p>}
               {!arenaBackendConfigured && <p>O ambiente competitivo será ativado após a conexão com o Supabase.</p>}
             </>}

@@ -6,6 +6,8 @@ const functionsUrl = process.env.NEXT_PUBLIC_SUPABASE_FUNCTIONS_URL
   ?? (supabaseUrl ? `${supabaseUrl}/functions/v1` : '');
 
 export const arenaBackendConfigured = Boolean(supabaseUrl && publishableKey && functionsUrl);
+export const googleAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH === 'true';
+export const githubAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_GITHUB_AUTH === 'true';
 
 export const supabase = arenaBackendConfigured
   ? createClient(supabaseUrl, publishableKey, {
