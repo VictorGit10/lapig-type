@@ -45,7 +45,7 @@ Supabase Edge Functions ── validação e recálculo do score
 Supabase PostgreSQL ── profiles, attempts e results
 ```
 
-- A sessão de login é administrada pelo SDK oficial do Supabase e persistida no armazenamento local do navegador com renovação automática.
+- A sessão de login é administrada pelo SDK oficial do Supabase e persistida no armazenamento local do navegador com renovação automática. O acesso por link enviado ao e-mail funciona sem conta ChatGPT; Google e GitHub podem ser habilitados como provedores adicionais.
 - A chave `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` é pública por definição. A `service_role` nunca entra no bundle ou no GitHub Pages.
 - As tabelas têm RLS e não podem ser lidas ou alteradas diretamente por visitantes autenticados ou anônimos.
 - O placar público é produzido pela função `leaderboard`, que retorna apenas nome público e melhor resultado aceito de cada pessoa.

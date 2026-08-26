@@ -6,6 +6,7 @@ import {
   arenaBackendConfigured,
   arenaRequest,
   signIn,
+  signInWithEmail,
   supabase,
   userDisplayName,
 } from './lib/supabase-browser';
@@ -38,6 +39,8 @@ export function TypingArena() {
   const [user, setUser] = useState<ArenaUser | null>(null);
   const [authMenuOpen, setAuthMenuOpen] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const attemptRef = useRef<Promise<RankedAttempt | null> | null>(null);
   const eventsRef = useRef<AttemptEvent[]>([]);
@@ -169,13 +172,30 @@ export function TypingArena() {
 
   const beginSignIn = useCallback(async (provider: 'google' | 'github') => {
     setAuthBusy(true);
+    setAuthMessage(null);
     try {
       await signIn(provider);
     } catch {
-      setSubmission('error');
+      setAuthMessage('Este provedor ainda não está disponível. Use o link por e-mail.');
       setAuthBusy(false);
     }
   }, []);
+
+  const beginEmailSignIn = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!authEmail.trim()) return;
+    setAuthBusy(true);
+    setAuthMessage(null);
+    try {
+      await signInWithEmail(authEmail.trim());
+      setAuthMessage('Link enviado. Confira sua caixa de entrada para entrar no ranking.');
+      setAuthEmail('');
+    } catch {
+      setAuthMessage('Não foi possível enviar o link agora. Tente novamente em instantes.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }, [authEmail]);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -252,8 +272,15 @@ export function TypingArena() {
               <button type="button" disabled={authBusy} onClick={() => void signOut()}>Sair</button>
             </> : <>
               <small>ENTRAR NO RANKING</small>
+              <form onSubmit={(event) => void beginEmailSignIn(event)}>
+                <label htmlFor="ranking-email">E-mail</label>
+                <input id="ranking-email" type="email" autoComplete="email" required value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="voce@exemplo.com" disabled={authBusy || !arenaBackendConfigured} />
+                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>Receber link de acesso</button>
+              </form>
+              <span className="auth-divider">ou continue com</span>
               <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>
               <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>
+              {authMessage && <p role="status">{authMessage}</p>}
               {!arenaBackendConfigured && <p>O ambiente competitivo será ativado após a conexão com o Supabase.</p>}
             </>}
           </div>}

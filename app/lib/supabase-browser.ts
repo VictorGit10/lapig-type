@@ -21,20 +21,35 @@ export function userDisplayName(user: User) {
   const metadataName = [user.user_metadata?.full_name, user.user_metadata?.name]
     .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
   if (metadataName) return metadataName.trim().slice(0, 48);
-  const localPart = user.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
-  return (localPart || 'Participante').slice(0, 48);
+  return `Participante ${user.id.slice(0, 4).toUpperCase()}`;
 }
 
 export async function signIn(provider: Extract<Provider, 'google' | 'github'>) {
   if (!supabase) throw new Error('backend_not_configured');
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: cleanRedirectUrl() },
+  });
+  if (error) throw error;
+}
+
+export async function signInWithEmail(email: string) {
+  if (!supabase) throw new Error('backend_not_configured');
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: cleanRedirectUrl(),
+      shouldCreateUser: true,
+    },
+  });
+  if (error) throw error;
+}
+
+function cleanRedirectUrl() {
   const redirectTo = new URL(window.location.href);
   redirectTo.search = '';
   redirectTo.hash = '';
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: { redirectTo: redirectTo.toString() },
-  });
-  if (error) throw error;
+  return redirectTo.toString();
 }
 
 export async function arenaRequest(

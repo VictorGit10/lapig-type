@@ -66,8 +66,7 @@ export function publicDisplayName(user: User) {
   const metadataName = [user.user_metadata?.full_name, user.user_metadata?.name]
     .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
   if (metadataName) return metadataName.trim().slice(0, 48);
-  const localPart = user.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim();
-  return (localPart || 'Participante').slice(0, 48);
+  return `Participante ${user.id.slice(0, 4).toUpperCase()}`;
 }
 
 export async function sha256(value: string) {
