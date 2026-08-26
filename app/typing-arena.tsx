@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { passages, previewLeaderboard } from './content';
+import {
+  arenaBackendConfigured,
+  arenaRequest,
+  signIn,
+  supabase,
+  userDisplayName,
+} from './lib/supabase-browser';
 
 type Status = 'ready' | 'running' | 'finished';
 type Submission = 'idle' | 'local' | 'verifying' | 'accepted' | 'review' | 'rejected' | 'error';
-type AttemptEvent = { delta: number; correct: boolean; repeat: boolean };
+type AttemptEvent = { delta: number; correct: boolean; key: string; repeat: boolean };
 type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number };
 type VerifiedResult = { grossWpm: number; accuracy: number; score: number; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
+type RankedAttempt = { attemptId: string; attemptToken: string };
+type ArenaUser = { id: string; name: string };
 
 const formatTime = (milliseconds: number) => {
   const seconds = Math.max(0, Math.floor(milliseconds / 1000));
@@ -15,7 +24,7 @@ const formatTime = (milliseconds: number) => {
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
-export function TypingArena({ initialUser }: { initialUser: { name: string } | null }) {
+export function TypingArena() {
   const [passageIndex, setPassageIndex] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [mistakes, setMistakes] = useState(0);
@@ -26,8 +35,11 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
   const [submission, setSubmission] = useState<Submission>('idle');
   const [verifiedResult, setVerifiedResult] = useState<VerifiedResult | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
+  const [user, setUser] = useState<ArenaUser | null>(null);
+  const [authMenuOpen, setAuthMenuOpen] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const attemptRef = useRef<Promise<string | null> | null>(null);
+  const attemptRef = useRef<Promise<RankedAttempt | null> | null>(null);
   const eventsRef = useRef<AttemptEvent[]>([]);
   const lastKeyAtRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
@@ -44,14 +56,31 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
   useEffect(() => { focusInput(); }, [focusInput, passageIndex]);
 
   useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setUser(data.user ? { id: data.user.id, name: userDisplayName(data.user) } : null);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setUser(session?.user ? { id: session.user.id, name: userDisplayName(session.user) } : null);
+    });
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     if (status !== 'running' || startedAt === null) return;
     const tick = window.setInterval(() => setElapsed(performance.now() - startedAt), 100);
     return () => window.clearInterval(tick);
   }, [status, startedAt]);
 
   const loadLeaderboard = useCallback(async () => {
+    if (!arenaBackendConfigured) return;
     try {
-      const response = await fetch('/api/leaderboard', { cache: 'no-store' });
+      const response = await arenaRequest('leaderboard', { method: 'GET', cache: 'no-store' });
       if (!response.ok) throw new Error('leaderboard_failed');
       const data = await response.json() as { leaderboard: LeaderboardRow[] };
       setLeaderboard(data.leaderboard);
@@ -92,44 +121,42 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
   }, [focusInput, passageIndex]);
 
   const startRankedAttempt = useCallback(async () => {
-    if (!initialUser) return null;
+    if (!user || !arenaBackendConfigured) return null;
     try {
-      const response = await fetch('/api/attempts/start', {
+      const response = await arenaRequest('attempt-start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ passageId: passage.id }),
-      });
+      }, true);
       if (!response.ok) return null;
-      const data = await response.json() as { attemptId: string };
-      return data.attemptId;
+      return await response.json() as RankedAttempt;
     } catch {
       return null;
     }
-  }, [initialUser, passage.id]);
+  }, [passage.id, user]);
 
   const finishRankedAttempt = useCallback(async (clientElapsedMs: number, mistakeCount: number) => {
-    if (!initialUser) {
+    if (!user || !arenaBackendConfigured) {
       setSubmission('local');
       return;
     }
     setSubmission('verifying');
-    const attemptId = await attemptRef.current;
-    if (!attemptId) {
+    const attempt = await attemptRef.current;
+    if (!attempt) {
       setSubmission('error');
       return;
     }
     try {
-      const response = await fetch('/api/attempts/finish', {
+      const response = await arenaRequest('attempt-finish', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          attemptId,
+          attemptId: attempt.attemptId,
+          attemptToken: attempt.attemptToken,
           clientElapsedMs: Math.round(clientElapsedMs),
           mistakes: mistakeCount,
           visibilityChanges: visibilityChangesRef.current,
           events: eventsRef.current,
         }),
-      });
+      }, true);
       if (!response.ok) throw new Error('submission_failed');
       const result = await response.json() as VerifiedResult;
       setVerifiedResult(result);
@@ -138,7 +165,25 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
     } catch {
       setSubmission('error');
     }
-  }, [initialUser, loadLeaderboard]);
+  }, [loadLeaderboard, user]);
+
+  const beginSignIn = useCallback(async (provider: 'google' | 'github') => {
+    setAuthBusy(true);
+    try {
+      await signIn(provider);
+    } catch {
+      setSubmission('error');
+      setAuthBusy(false);
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    if (!supabase) return;
+    setAuthBusy(true);
+    await supabase.auth.signOut();
+    setAuthBusy(false);
+    setAuthMenuOpen(false);
+  }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished') return;
@@ -158,6 +203,7 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
     eventsRef.current.push({
       delta: lastKeyAtRef.current === null ? 0 : Math.max(0, Math.round(now - lastKeyAtRef.current)),
       correct,
+      key: event.key.normalize('NFC'),
       repeat: event.repeat,
     });
     lastKeyAtRef.current = now;
@@ -194,11 +240,24 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
           <span className="brand-copy"><strong>LAPIG</strong><small>TYPE</small></span>
         </a>
         <nav className="nav-links" aria-label="Navegação principal">
-          <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="#sobre">Sobre</a>
+          <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="#sobre">Sobre</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Código ↗</a>
         </nav>
-        <a className="login-button" href={initialUser ? '/signout-with-chatgpt?return_to=%2F' : '/signin-with-chatgpt?return_to=%2F'}>
-          {initialUser ? initialUser.name : 'Entrar'} <span>{initialUser ? '•' : '↗'}</span>
-        </a>
+        <div className="auth-control" onClick={(event) => event.stopPropagation()}>
+          <button className="login-button" type="button" onClick={() => setAuthMenuOpen((value) => !value)} aria-expanded={authMenuOpen}>
+            {user ? user.name : 'Entrar'} <span>{user ? '•' : '↗'}</span>
+          </button>
+          {authMenuOpen && <div className="auth-menu">
+            {user ? <>
+              <small>RESULTADOS VINCULADOS A</small><strong>{user.name}</strong>
+              <button type="button" disabled={authBusy} onClick={() => void signOut()}>Sair</button>
+            </> : <>
+              <small>ENTRAR NO RANKING</small>
+              <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>
+              <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>
+              {!arenaBackendConfigured && <p>O ambiente competitivo será ativado após a conexão com o Supabase.</p>}
+            </>}
+          </div>}
+        </div>
       </header>
 
       <section className="hero" id="top">
@@ -251,7 +310,7 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
         </div>
 
         <aside className="ranking-card" id="ranking">
-          <header><div><span>PLACAR GERAL</span><h2>Mais velozes</h2></div><b>{leaderboard === null ? 'ABRINDO' : 'AO VIVO'}</b></header>
+          <header><div><span>PLACAR GERAL</span><h2>Mais velozes</h2></div><b>{!arenaBackendConfigured ? 'DEMO' : leaderboard === null ? 'ABRINDO' : 'AO VIVO'}</b></header>
           <ol>{rankingRows.map((player) => (
             <li key={player.rank} className={player.rank <= 3 ? `podium podium-${player.rank}` : ''}>
               <span className="rank">{String(player.rank).padStart(2, '0')}</span>
@@ -282,12 +341,16 @@ export function TypingArena({ initialUser }: { initialUser: { name: string } | n
               {submission === 'error' && 'Não foi possível validar esta sessão. Seu treino local continua salvo na tela.'}
               {submission === 'local' && 'Treino concluído. Entre antes da próxima tentativa para disputar o ranking.'}
             </p>
-            {submission === 'local' && <a className="result-login" href="/signin-with-chatgpt?return_to=%2F">Entrar para competir ↗</a>}
+            {submission === 'local' && <button className="result-login" type="button" onClick={() => setAuthMenuOpen(true)}>Entrar para competir ↗</button>}
             <button type="button" onClick={() => reset((passageIndex + 1) % passages.length)}>Próximo texto <span>→</span></button>
             <button className="result-secondary" type="button" onClick={() => reset()}>Tentar novamente</button>
           </section>
         </div>
       )}
+      <footer className="site-footer">
+        <p>Uma experiência aberta de ciência, território e digitação.</p>
+        <a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Ver o projeto no GitHub ↗</a>
+      </footer>
     </main>
   );
 }
