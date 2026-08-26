@@ -21,8 +21,10 @@ type VerifiedResult = { grossWpm: number; accuracy: number; score: number; trust
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
 
-const formatTime = (milliseconds: number) => {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+const CHALLENGE_DURATION_MS = 60_000;
+
+const formatTime = (milliseconds: number, roundUp = false) => {
+  const seconds = Math.max(0, roundUp ? Math.ceil(milliseconds / 1000) : Math.floor(milliseconds / 1000));
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
 };
@@ -49,12 +51,17 @@ export function TypingArena() {
   const lastKeyAtRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const visibilityChangesRef = useRef(0);
+  const mistakesRef = useRef(0);
+  const finishedRef = useRef(false);
+  const typingCopyRef = useRef<HTMLDivElement>(null);
+  const currentCharacterRef = useRef<HTMLSpanElement>(null);
   const passage = passages[passageIndex];
 
   const accuracy = cursor + mistakes === 0 ? 100 : Math.round((cursor / (cursor + mistakes)) * 100);
   const minutes = Math.max(elapsed / 60000, 1 / 60000);
   const wpm = status === 'ready' ? 0 : Math.round(cursor / 5 / minutes);
-  const progress = Math.round((cursor / passage.text.length) * 100);
+  const remaining = Math.max(0, CHALLENGE_DURATION_MS - elapsed);
+  const progress = Math.round((elapsed / CHALLENGE_DURATION_MS) * 100);
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
 
@@ -75,12 +82,6 @@ export function TypingArena() {
       listener.subscription.unsubscribe();
     };
   }, []);
-
-  useEffect(() => {
-    if (status !== 'running' || startedAt === null) return;
-    const tick = window.setInterval(() => setElapsed(performance.now() - startedAt), 100);
-    return () => window.clearInterval(tick);
-  }, [status, startedAt]);
 
   const loadLeaderboard = useCallback(async () => {
     if (!arenaBackendConfigured) return;
@@ -122,6 +123,9 @@ export function TypingArena() {
     lastKeyAtRef.current = null;
     startedAtRef.current = null;
     visibilityChangesRef.current = 0;
+    mistakesRef.current = 0;
+    finishedRef.current = false;
+    if (typingCopyRef.current) typingCopyRef.current.scrollTop = 0;
     window.setTimeout(focusInput, 0);
   }, [focusInput, passageIndex]);
 
@@ -172,6 +176,39 @@ export function TypingArena() {
     }
   }, [loadLeaderboard, user]);
 
+  const finishTimedAttempt = useCallback(() => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    setElapsed(CHALLENGE_DURATION_MS);
+    setStatus('finished');
+    void finishRankedAttempt(CHALLENGE_DURATION_MS, mistakesRef.current);
+  }, [finishRankedAttempt]);
+
+  useEffect(() => {
+    if (status !== 'running' || startedAt === null) return;
+    const tick = () => {
+      const nextElapsed = Math.min(CHALLENGE_DURATION_MS, performance.now() - startedAt);
+      setElapsed(nextElapsed);
+      if (nextElapsed >= CHALLENGE_DURATION_MS) finishTimedAttempt();
+    };
+    tick();
+    const timer = window.setInterval(tick, 100);
+    return () => window.clearInterval(timer);
+  }, [finishTimedAttempt, startedAt, status]);
+
+  useEffect(() => {
+    const container = typingCopyRef.current;
+    const current = currentCharacterRef.current;
+    if (!container || !current) return;
+    const currentTop = current.offsetTop;
+    const currentBottom = currentTop + current.offsetHeight;
+    const visibleTop = container.scrollTop;
+    const visibleBottom = visibleTop + container.clientHeight;
+    if (currentBottom > visibleBottom - 52 || currentTop < visibleTop + 16) {
+      container.scrollTo({ top: Math.max(0, currentTop - container.clientHeight * 0.36), behavior: 'smooth' });
+    }
+  }, [cursor]);
+
   const beginSignIn = useCallback(async (provider: 'google' | 'github') => {
     setAuthBusy(true);
     setAuthMessage(null);
@@ -212,6 +249,7 @@ export function TypingArena() {
     if (event.key === 'Tab') return;
     event.preventDefault();
     if (event.key.length !== 1) return;
+    if (cursor >= passage.text.length) return;
 
     const now = performance.now();
     if (status === 'ready') {
@@ -231,6 +269,7 @@ export function TypingArena() {
     lastKeyAtRef.current = now;
 
     if (!correct) {
+      mistakesRef.current += 1;
       setMistakes((value) => value + 1);
       setErrorPulse(false);
       window.requestAnimationFrame(() => setErrorPulse(true));
@@ -240,17 +279,11 @@ export function TypingArena() {
     const nextCursor = cursor + 1;
     setErrorPulse(false);
     setCursor(nextCursor);
-    if (nextCursor === passage.text.length) {
-      const finalElapsed = startedAtRef.current === null ? 0 : now - startedAtRef.current;
-      setElapsed(finalElapsed);
-      setStatus('finished');
-      void finishRankedAttempt(finalElapsed, mistakes);
-    }
   };
 
   const renderedText = useMemo(() => passage.text.split('').map((character, index) => {
     const state = index < cursor ? 'typed' : index === cursor ? 'current' : 'pending';
-    return <span className={`character character--${state}`} key={`${index}-${character}`}>{character === ' ' ? '\u00a0' : character}</span>;
+    return <span ref={index === cursor ? currentCharacterRef : undefined} className={`character character--${state}`} key={`${index}-${character}`}>{character}</span>;
   }), [cursor, passage.text]);
   const rankingRows = leaderboard ?? previewLeaderboard;
 
@@ -305,7 +338,7 @@ export function TypingArena() {
           <div className="metrics" aria-live="polite">
             <article><span>Velocidade</span><strong>{wpm}</strong><small>PPM</small></article>
             <article><span>Precisão</span><strong>{accuracy}</strong><small>%</small></article>
-            <article><span>Tempo</span><strong>{formatTime(elapsed)}</strong></article>
+            <article><span>Tempo restante</span><strong>{formatTime(remaining, true)}</strong></article>
             <article><span>Erros</span><strong>{mistakes}</strong></article>
           </div>
 
@@ -314,8 +347,8 @@ export function TypingArena() {
               <div><span className="passage-number">TEXTO 0{passageIndex + 1}</span><span className="passage-topic">{passage.eyebrow}</span></div>
               <button type="button" onClick={(event) => { event.stopPropagation(); reset(); }} aria-label="Recomeçar texto">↻ <span>Recomeçar</span></button>
             </header>
-            <div className="progress-track" aria-label={`${progress}% concluído`}><i style={{ width: `${progress}%` }} /></div>
-            <div className="typing-copy" aria-label={passage.text}>{renderedText}</div>
+            <div className="progress-track" aria-label={`${progress}% do tempo decorrido`}><i style={{ width: `${progress}%` }} /></div>
+            <div ref={typingCopyRef} className="typing-copy" aria-label={passage.text}>{renderedText}</div>
             <input
               ref={inputRef}
               className="typing-input"
@@ -327,13 +360,13 @@ export function TypingArena() {
               spellCheck={false} value="" onChange={() => undefined}
             />
             <footer className="passage-foot">
-              <p><span className="status-dot" />{status === 'ready' ? 'Comece a digitar para iniciar' : status === 'running' ? 'Sessão em andamento' : 'Texto concluído'}</p>
+              <p><span className="status-dot" />{status === 'ready' ? 'A primeira tecla inicia os 60 segundos' : status === 'running' ? `${Math.ceil(remaining / 1000)} s restantes` : 'Tempo encerrado'}</p>
               <p>Errou? O cursor espera a tecla correta.</p>
             </footer>
           </article>
 
           <article className="source-card">
-            <div><span>FONTE DA PESQUISA</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p></div>
+            <div><span>FONTE DA PESQUISA</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p><p className="source-reference">{passage.referenceAbnt}</p></div>
             <a href={passage.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Ver publicação ↗</a>
           </article>
         </div>
@@ -358,8 +391,8 @@ export function TypingArena() {
       {status === 'finished' && (
         <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => event.stopPropagation()}>
           <section className="result-card">
-            <span className="result-kicker">TEXTO CONCLUÍDO</span>
-            <h2 id="result-title">Belo ritmo.<br />Agora vale o ranking.</h2>
+            <span className="result-kicker">DESAFIO DE 1 MINUTO</span>
+            <h2 id="result-title">Tempo encerrado.<br />Agora vale o ranking.</h2>
             <div className="result-score"><strong>{verifiedResult?.grossWpm ?? wpm}</strong><span>PALAVRAS<br />POR MINUTO</span></div>
             <div className="result-details"><span><b>{verifiedResult?.accuracy ?? accuracy}%</b> precisão</span><span><b>{mistakes}</b> erros</span><span><b>{formatTime(elapsed)}</b> tempo</span></div>
             <p className={`submission-note submission-note--${submission}`}>

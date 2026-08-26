@@ -23,27 +23,30 @@ export type ScoreVerdict = {
   flags: string[];
 };
 
+const CHALLENGE_DURATION_MS = 60_000;
+
 export function scoreAttempt(input: ScoreInput): ScoreVerdict {
   const fatal: string[] = [];
   const suspicious: string[] = [];
   const events = Array.isArray(input.events) ? input.events : [];
   const expectedText = typeof input.expectedText === 'string' ? input.expectedText : '';
   const expectedChars = expectedText.length;
-  const durationMs = Math.max(Math.round(input.clientElapsedMs), Math.round(input.serverElapsedMs));
   const correctEvents = events.filter((event) => event.correct);
   const mistakeEvents = events.length - correctEvents.length;
+  const correctChars = correctEvents.length;
+  const durationMs = CHALLENGE_DURATION_MS;
 
   if (expectedChars < 80 || expectedChars > 1200) fatal.push('invalid_expected_length');
-  if (events.length > 2400 || events.length < expectedChars) fatal.push('invalid_event_count');
-  if (correctEvents.length !== expectedChars) fatal.push('incomplete_sequence');
+  if (events.length > 2400 || correctChars < 10 || correctChars > expectedChars) fatal.push('invalid_event_count');
   if (mistakeEvents !== input.reportedMistakes) fatal.push('mistake_mismatch');
-  if (!Number.isFinite(durationMs) || durationMs < 1_000 || durationMs > 20 * 60_000) fatal.push('invalid_duration');
-  if (Math.abs(input.clientElapsedMs - input.serverElapsedMs) > 5_000) fatal.push('clock_mismatch');
+  if (!Number.isFinite(input.clientElapsedMs) || input.clientElapsedMs < 55_000 || input.clientElapsedMs > 65_000) fatal.push('invalid_duration');
+  if (!Number.isFinite(input.serverElapsedMs) || input.serverElapsedMs < 50_000 || input.serverElapsedMs > 70_000) fatal.push('invalid_duration');
+  if (Math.abs(input.clientElapsedMs - input.serverElapsedMs) > 7_500) fatal.push('clock_mismatch');
 
   const deltas = events.map((event) => event.delta);
   if (deltas.some((delta) => !Number.isFinite(delta) || delta < 0 || delta > 120_000)) fatal.push('invalid_timing_event');
   const eventDuration = deltas.reduce((sum, delta) => sum + delta, 0);
-  if (Math.abs(eventDuration - input.clientElapsedMs) > 1_500) fatal.push('event_timeline_mismatch');
+  if (eventDuration > input.clientElapsedMs + 1_500) fatal.push('event_timeline_mismatch');
 
   let sequenceCursor = 0;
   let sequenceValid = true;
@@ -56,10 +59,10 @@ export function scoreAttempt(input: ScoreInput): ScoreVerdict {
     if (event.correct !== matches) sequenceValid = false;
     if (matches) sequenceCursor += 1;
   }
-  if (!sequenceValid || sequenceCursor !== expectedChars) fatal.push('key_sequence_mismatch');
+  if (!sequenceValid || sequenceCursor !== correctChars) fatal.push('key_sequence_mismatch');
 
-  const grossWpm = Math.round((expectedChars / 5) / Math.max(durationMs / 60_000, 1 / 60_000));
-  const accuracy = Math.round((expectedChars / Math.max(events.length, 1)) * 100);
+  const grossWpm = Math.round(correctChars / 5);
+  const accuracy = Math.round((correctChars / Math.max(events.length, 1)) * 100);
   const score = Math.max(0, Math.round(grossWpm * Math.pow(accuracy / 100, 2)));
 
   if (grossWpm > 220) fatal.push('impossible_speed');

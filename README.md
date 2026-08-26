@@ -6,24 +6,25 @@ O site é uma exportação estática do Next.js publicada no GitHub Pages. Login
 
 ## Experiência
 
-- o cronômetro começa na primeira tecla imprimível;
+- o cronômetro regressivo de 60 segundos começa na primeira tecla imprimível;
 - o cursor só avança quando o caractere esperado é digitado;
 - erros aumentam a contagem, consomem tempo e reduzem o score;
 - colar, recortar e copiar o campo de treino é bloqueado;
-- velocidade, precisão, tempo e erros são atualizados durante a sessão;
+- velocidade, precisão, tempo restante e erros são atualizados durante a sessão;
+- o desafio termina ao fim de um minuto, sem exigir que o artigo seja concluído;
 - visitantes podem treinar sem conta; resultados competitivos exigem autenticação;
-- cada publicação aparece com autoria, ano e link para a fonte.
+- cada publicação aparece com referência ABNT e link DOI para a fonte.
 
-Os textos incluídos no protótipo são adaptações editoriais dos resumos, não transcrições literais. A curadoria final deve registrar autorização/licença, versão do texto e aprovação do LAPIG.
+Os três textos de treino reúnem excertos dos artigos científicos indicados na própria interface. O conteúdo permanece no idioma original; somente sinais tipográficos foram normalizados para permitir reprodução consistente pelo teclado. Antes de um lançamento institucional, a curadoria ainda deve registrar a licença ou autorização e a aprovação do LAPIG para cada passagem.
 
 ## Ranking verificável
 
 O navegador não envia um score pronto. Ele solicita uma tentativa de uso único e envia, ao terminar, a sequência temporal de teclas. O servidor então:
 
 1. confirma usuário, tentativa, prazo e dispositivo lógico;
-2. confere a quantidade de caracteres corretos e erros;
+2. confere a sequência parcial de caracteres corretos e erros produzida durante o minuto;
 3. compara relógio do cliente, relógio do servidor e soma dos intervalos;
-4. recalcula PPM, precisão e score;
+4. recalcula PPM, precisão e score sobre uma janela fixa de 60 segundos;
 5. rejeita velocidades impossíveis e rajadas mecânicas;
 6. separa padrões suspeitos para revisão;
 7. aceita apenas o melhor resultado verificado de cada pessoa no placar público.
@@ -81,4 +82,4 @@ O projeto Supabase hospedado, os provedores OAuth e a visibilidade pública do r
 
 ## Conteúdo e licença
 
-Os textos de treino ainda são adaptações editoriais para protótipo. Antes do lançamento institucional, registre a fonte, a licença ou autorização e a aprovação do LAPIG para cada passagem. A licença do código também deve ser escolhida antes de tornar o repositório público.
+O código-fonte é distribuído sob a licença MIT. Os artigos e seus excertos permanecem sujeitos aos direitos e às licenças de seus respectivos autores e editoras; antes de um lançamento institucional, registre a autorização e a aprovação do LAPIG para cada passagem.
