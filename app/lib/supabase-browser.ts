@@ -68,14 +68,14 @@ function cleanRedirectUrl() {
   return redirectTo.toString();
 }
 
-function normalizeUsername(username: string) {
+export function normalizeUsername(username: string) {
   const normalized = username.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9._-]{2,23}$/.test(normalized)) throw new Error('invalid_username');
   return normalized;
 }
 
-function accountEmail(username: string) {
-  return `${username}@users.lapig-type.invalid`;
+export function accountEmail(username: string) {
+  return `${username}@users.victorgit10.github.io`;
 }
 
 export async function arenaRequest(

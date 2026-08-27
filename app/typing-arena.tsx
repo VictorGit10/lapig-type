@@ -232,7 +232,24 @@ export function TypingArena() {
 
   const beginPasswordAuth = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!authUsername.trim() || !authPassword || !captchaToken || !turnstileSiteKey) return;
+    const normalizedUsername = authUsername.trim();
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,23}$/.test(normalizedUsername)) {
+      setAuthMessage('Use de 3 a 24 caracteres: letras, números, ponto, hífen ou sublinhado.');
+      return;
+    }
+    if (authPassword.length < 10) {
+      setAuthMessage('A senha precisa ter pelo menos 10 caracteres.');
+      return;
+    }
+    if (!turnstileSiteKey) {
+      setAuthMessage('A proteção anti-bot não está configurada.');
+      return;
+    }
+    if (!captchaToken) {
+      setAuthMessage('Aguarde a verificação anti-bot e tente novamente.');
+      setCaptchaResetSignal((value) => value + 1);
+      return;
+    }
     setAuthBusy(true);
     setAuthMessage(null);
     try {
@@ -244,10 +261,8 @@ export function TypingArena() {
         setAuthMessage('Entrada realizada com sucesso.');
       }
       setAuthPassword('');
-    } catch {
-      setAuthMessage(authMode === 'signup'
-        ? 'Não foi possível criar a conta. Confira o usuário, a senha e tente outro nome.'
-        : 'Usuário, senha ou verificação inválidos.');
+    } catch (error) {
+      setAuthMessage(authFailureMessage(error, authMode));
     } finally {
       setAuthBusy(false);
       setCaptchaToken(null);
@@ -330,13 +345,14 @@ export function TypingArena() {
                 <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Entrar</button>
                 <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Criar conta</button>
               </div>
-              <form onSubmit={(event) => void beginPasswordAuth(event)}>
+              <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
                 <label htmlFor="ranking-username">Nome de usuário</label>
                 <input id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}" required value={authUsername} onChange={(event) => setAuthUsername(event.target.value)} placeholder="ex.: ana.cerrado" disabled={authBusy || !arenaBackendConfigured} />
                 <label htmlFor="ranking-password">Senha</label>
                 <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="Mínimo de 10 caracteres" disabled={authBusy || !arenaBackendConfigured} />
                 <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
-                <button type="submit" disabled={authBusy || !arenaBackendConfigured || !captchaToken || !turnstileSiteKey}>{authMode === 'signup' ? 'Criar conta' : 'Entrar'}</button>
+                <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? '✓ Verificação anti-bot concluída' : 'Verificando se você é uma pessoa…'}</span>
+                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? 'Criando conta…' : 'Entrando…') : (authMode === 'signup' ? 'Criar conta' : 'Entrar')}</button>
               </form>
               <p>Sem e-mail. Se perder a senha, crie outra conta.</p>
               {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">ou continue com</span>}
@@ -447,4 +463,17 @@ export function TypingArena() {
       </footer>
     </main>
   );
+}
+
+function authFailureMessage(error: unknown, mode: AuthMode) {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (code === 'captcha_failed' || message.includes('captcha')) return 'A verificação anti-bot expirou. Aguarde a renovação e tente novamente.';
+  if (code === 'weak_password' || message.includes('password')) return 'A senha não foi aceita. Use pelo menos 10 caracteres.';
+  if (code === 'user_already_exists' || message.includes('already registered')) return 'Esse nome de usuário já está em uso.';
+  if (code === 'over_request_rate_limit' || message.includes('rate limit')) return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.';
+  if (code === 'email_address_invalid' || message.includes('invalid email')) return 'O identificador interno da conta não foi aceito. Tente outro nome.';
+  return mode === 'signup'
+    ? 'Não foi possível criar a conta agora. A verificação foi renovada; tente novamente.'
+    : 'Usuário ou senha incorretos. A verificação foi renovada para uma nova tentativa.';
 }
