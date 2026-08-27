@@ -65,7 +65,15 @@ export async function authenticatedUser(request: Request): Promise<User | null> 
 export function publicDisplayName(user: User) {
   const metadataName = [user.user_metadata?.full_name, user.user_metadata?.name]
     .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-  if (metadataName) return metadataName.trim().slice(0, 48);
+  if (metadataName) {
+    const safeName = metadataName
+      .normalize('NFC')
+      .replace(/[\p{Cc}\p{Cf}]/gu, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 48);
+    if (/^[\p{L}\p{N}](?:[\p{L}\p{N} .'’_-]*[\p{L}\p{N}])?$/u.test(safeName)) return safeName;
+  }
   return `Participante ${user.id.slice(0, 4).toUpperCase()}`;
 }
 

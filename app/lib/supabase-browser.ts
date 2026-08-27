@@ -23,7 +23,15 @@ export const supabase = arenaBackendConfigured
 export function userDisplayName(user: User) {
   const metadataName = [user.user_metadata?.full_name, user.user_metadata?.name]
     .find((value) => typeof value === 'string' && value.trim()) as string | undefined;
-  if (metadataName) return metadataName.trim().slice(0, 48);
+  if (metadataName) {
+    const safeName = metadataName
+      .normalize('NFC')
+      .replace(/[\p{Cc}\p{Cf}]/gu, '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 48);
+    if (/^[\p{L}\p{N}](?:[\p{L}\p{N} .'’_-]*[\p{L}\p{N}])?$/u.test(safeName)) return safeName;
+  }
   return `Participante ${user.id.slice(0, 4).toUpperCase()}`;
 }
 
@@ -95,18 +103,48 @@ export function accountEmail(username: string) {
   return `${username}@users.victorgit10.github.io`;
 }
 
-export function authFailureMessage(error: unknown, mode: 'signin' | 'signup') {
+export function authFailureMessage(error: unknown, mode: 'signin' | 'signup', language: 'pt' | 'en' | 'es' = 'pt') {
   const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
   const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (code === 'captcha_failed' || message.includes('captcha')) return 'A verificação anti-bot expirou. Aguarde a renovação e tente novamente.';
-  if (code === 'weak_password' || message.includes('password')) return 'A senha não foi aceita. Use pelo menos 10 caracteres.';
-  if (code === 'user_already_exists' || message.includes('already registered') || message.includes('already_exists')) return 'Esse nome de usuário já está em uso. Tente entrar ou escolha outro nome.';
-  if (code === 'over_request_rate_limit' || message.includes('rate limit')) return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.';
-  if (code === 'email_address_invalid' || message.includes('invalid email')) return 'O identificador interno da conta não foi aceito. Tente outro nome.';
-  if (message.includes('signup_requires_confirmation')) return 'A conta foi recebida, mas o acesso automático não foi liberado. Tente entrar; se não funcionar, escolha outro nome.';
-  return mode === 'signup'
-    ? 'Não foi possível criar a conta agora. A verificação foi renovada; tente novamente.'
-    : 'Usuário ou senha incorretos. A verificação foi renovada para uma nova tentativa.';
+  const messages = {
+    pt: {
+      captcha: 'A verificação anti-bot expirou. Aguarde a renovação e tente novamente.',
+      password: 'A senha não foi aceita. Use pelo menos 10 caracteres.',
+      exists: 'Esse nome de usuário já está em uso. Tente entrar ou escolha outro nome.',
+      rate: 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.',
+      identifier: 'O identificador interno da conta não foi aceito. Tente outro nome.',
+      confirmation: 'A conta foi recebida, mas o acesso automático não foi liberado. Tente entrar; se não funcionar, escolha outro nome.',
+      signup: 'Não foi possível criar a conta agora. A verificação foi renovada; tente novamente.',
+      signin: 'Usuário ou senha incorretos. A verificação foi renovada para uma nova tentativa.',
+    },
+    en: {
+      captcha: 'The anti-bot check expired. Wait for it to refresh and try again.',
+      password: 'The password was not accepted. Use at least 10 characters.',
+      exists: 'That username is already in use. Sign in or choose another name.',
+      rate: 'Too many attempts in a short time. Wait a few minutes.',
+      identifier: 'The internal account identifier was not accepted. Try another name.',
+      confirmation: 'The account was received, but automatic access was not enabled. Try signing in or choose another name.',
+      signup: 'The account could not be created right now. The check was refreshed; try again.',
+      signin: 'Incorrect username or password. The check was refreshed for another attempt.',
+    },
+    es: {
+      captcha: 'La verificación anti-bot caducó. Espera a que se renueve e inténtalo de nuevo.',
+      password: 'La contraseña no fue aceptada. Usa al menos 10 caracteres.',
+      exists: 'Ese nombre de usuario ya está en uso. Entra o elige otro nombre.',
+      rate: 'Demasiados intentos en poco tiempo. Espera unos minutos.',
+      identifier: 'El identificador interno de la cuenta no fue aceptado. Prueba con otro nombre.',
+      confirmation: 'La cuenta fue recibida, pero el acceso automático no se habilitó. Intenta entrar o elige otro nombre.',
+      signup: 'No fue posible crear la cuenta ahora. La verificación se renovó; inténtalo de nuevo.',
+      signin: 'Usuario o contraseña incorrectos. La verificación se renovó para otro intento.',
+    },
+  }[language];
+  if (code === 'captcha_failed' || message.includes('captcha')) return messages.captcha;
+  if (code === 'weak_password' || message.includes('password')) return messages.password;
+  if (code === 'user_already_exists' || message.includes('already registered') || message.includes('already_exists')) return messages.exists;
+  if (code === 'over_request_rate_limit' || message.includes('rate limit')) return messages.rate;
+  if (code === 'email_address_invalid' || message.includes('invalid email')) return messages.identifier;
+  if (message.includes('signup_requires_confirmation')) return messages.confirmation;
+  return mode === 'signup' ? messages.signup : messages.signin;
 }
 
 export async function arenaRequest(

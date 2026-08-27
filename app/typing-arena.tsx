@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { passages, previewLeaderboard } from './content';
+import { passages } from './content';
+import { LANGUAGE_LABELS, passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
+import { PlayerAvatar } from './player-avatar';
 import {
   arenaBackendConfigured,
   arenaRequest,
@@ -45,6 +47,7 @@ const formatTime = (milliseconds: number, roundUp = false) => {
 };
 
 export function TypingArena() {
+  const [language, setLanguage] = useState<Language>('pt');
   const [passageIndex, setPassageIndex] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [mistakes, setMistakes] = useState(0);
@@ -76,9 +79,11 @@ export function TypingArena() {
   const finishedRef = useRef(false);
   const keyRepeatRef = useRef(false);
   const initialPassagePickedRef = useRef(false);
+  const languageLoadedRef = useRef(false);
   const typingCopyRef = useRef<HTMLDivElement>(null);
   const currentCharacterRef = useRef<HTMLSpanElement>(null);
   const passage = passages[passageIndex];
+  const copy = UI_COPY[language];
 
   const accuracy = cursor + mistakes === 0 ? 100 : Math.round((cursor / (cursor + mistakes)) * 100);
   const minutes = Math.max(elapsed / 60000, 1 / 60000);
@@ -86,7 +91,29 @@ export function TypingArena() {
   const remaining = Math.max(0, CHALLENGE_DURATION_MS - elapsed);
   const progress = Math.round((elapsed / CHALLENGE_DURATION_MS) * 100);
 
-  const focusInput = useCallback(() => inputRef.current?.focus(), []);
+  const focusInput = useCallback(() => inputRef.current?.focus({ preventScroll: true }), []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('lapig-type:language');
+    if (saved !== 'pt' && saved !== 'en' && saved !== 'es') {
+      languageLoadedRef.current = true;
+      return;
+    }
+    if (saved === 'pt') {
+      languageLoadedRef.current = true;
+      return;
+    }
+    const request = window.setTimeout(() => {
+      languageLoadedRef.current = true;
+      setLanguage(saved);
+    }, 0);
+    return () => window.clearTimeout(request);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language === 'pt' ? 'pt-BR' : language;
+    if (languageLoadedRef.current) window.localStorage.setItem('lapig-type:language', language);
+  }, [language]);
 
   useEffect(() => {
     if (initialPassagePickedRef.current) return;
@@ -110,7 +137,9 @@ export function TypingArena() {
     }, 0);
   }, []);
 
-  useEffect(() => { focusInput(); }, [focusInput, passageIndex]);
+  useEffect(() => {
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) focusInput();
+  }, [focusInput, passageIndex]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -291,10 +320,10 @@ export function TypingArena() {
     try {
       await signInWithProvider(provider);
     } catch {
-      setAuthFeedback({ tone: 'error', text: 'Este provedor ainda não está disponível. Entre com nome e senha.' });
+      setAuthFeedback({ tone: 'error', text: copy.providerUnavailable });
       setAuthBusy(false);
     }
-  }, []);
+  }, [copy.providerUnavailable]);
 
   const handleCaptchaToken = useCallback((token: string | null) => setCaptchaToken(token), []);
 
@@ -303,19 +332,19 @@ export function TypingArena() {
     try {
       normalizeDisplayName(authUsername);
     } catch {
-      setAuthFeedback({ tone: 'error', text: 'Informe um nome de 3 a 32 caracteres. Espaços, letras, números, ponto, hífen e sublinhado são aceitos.' });
+      setAuthFeedback({ tone: 'error', text: copy.invalidUsername });
       return;
     }
     if (authPassword.length < 10) {
-      setAuthFeedback({ tone: 'error', text: `A senha ainda precisa de ${10 - authPassword.length} ${10 - authPassword.length === 1 ? 'caractere' : 'caracteres'}.` });
+      setAuthFeedback({ tone: 'error', text: passwordRemaining(language, 10 - authPassword.length) });
       return;
     }
     if (!turnstileSiteKey) {
-      setAuthFeedback({ tone: 'error', text: 'A proteção anti-bot não está configurada.' });
+      setAuthFeedback({ tone: 'error', text: copy.captchaNotConfigured });
       return;
     }
     if (!captchaToken) {
-      setAuthFeedback({ tone: 'error', text: 'A verificação anti-bot ainda não terminou. Aguarde o indicador verde e tente novamente.' });
+      setAuthFeedback({ tone: 'error', text: copy.captchaMissing });
       setCaptchaResetSignal((value) => value + 1);
       return;
     }
@@ -324,20 +353,20 @@ export function TypingArena() {
     try {
       if (authMode === 'signup') {
         await signUpWithPassword(authUsername, authPassword, captchaToken);
-        setAuthFeedback({ tone: 'success', text: 'Conta criada com sucesso. Você já está participando do ranking.' });
+        setAuthFeedback({ tone: 'success', text: copy.accountCreated });
       } else {
         await signInWithPassword(authUsername, authPassword, captchaToken);
-        setAuthFeedback({ tone: 'success', text: 'Entrada realizada com sucesso.' });
+        setAuthFeedback({ tone: 'success', text: copy.signedIn });
       }
       setAuthPassword('');
     } catch (error) {
-      setAuthFeedback({ tone: 'error', text: authFailureMessage(error, authMode) });
+      setAuthFeedback({ tone: 'error', text: authFailureMessage(error, authMode, language) });
     } finally {
       setAuthBusy(false);
       setCaptchaToken(null);
       setCaptchaResetSignal((value) => value + 1);
     }
-  }, [authMode, authPassword, authUsername, captchaToken]);
+  }, [authMode, authPassword, authUsername, captchaToken, copy.accountCreated, copy.captchaMissing, copy.captchaNotConfigured, copy.invalidUsername, copy.signedIn, language]);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -400,117 +429,125 @@ export function TypingArena() {
     const state = index < cursor ? 'typed' : index === cursor ? 'current' : 'pending';
     return <span ref={index === cursor ? currentCharacterRef : undefined} className={`character character--${state}`} key={`${index}-${character}`}>{character}</span>;
   }), [cursor, passage.text]);
-  const rankingRows = leaderboard ?? previewLeaderboard;
+  const rankingRows = leaderboard ?? [];
   const podiumRows = rankingRows.slice(0, 3);
   const orderedPodiumRows = [podiumRows[1], podiumRows[0], podiumRows[2]].filter(
     (player): player is LeaderboardRow => Boolean(player),
   );
   const remainingRankingRows = rankingRows.slice(3);
-  const previewStatus = !arenaBackendConfigured ? 'DEMONSTRAÇÃO' : leaderboard === null ? 'CARREGANDO' : 'ATUALIZADO';
+  const previewStatus = !arenaBackendConfigured ? copy.unavailable : leaderboard === null ? copy.loading : copy.updated;
 
   return (
-    <main className="site-shell" onClick={() => { if (!authMenuOpen && status !== 'finished') focusInput(); }}>
+    <main className="site-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="LAPIG Type — início">
+        <a className="brand" href="#top" aria-label={copy.brandHome}>
           <span className="brand-keys" aria-hidden="true">
             {'LAPIG'.split('').map((letter) => <i key={letter}>{letter}</i>)}
           </span>
           <span className="brand-type" aria-hidden="true">TYPE<b /></span>
         </a>
-        <nav className="nav-links" aria-label="Navegação principal">
-          <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Código ↗</a>
+        <nav className="nav-links" aria-label={copy.navLabel}>
+          <a className="active" href="#treino">{copy.training}</a><a href="#ranking">{copy.ranking}</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">{copy.code}</a>
         </nav>
-        <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
-          <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
-            {user ? user.name : 'Entrar'} <span>{user ? '•' : '↗'}</span>
-          </button>
-          {authMenuOpen && <div className="auth-menu">
+        <div className="top-actions">
+          <label className="language-control">
+            <span className="sr-only">{copy.language}</span>
+            <select aria-label={copy.language} value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
+              {(Object.keys(LANGUAGE_LABELS) as Language[]).map((code) => <option key={code} value={code}>{code.toUpperCase()} · {LANGUAGE_LABELS[code]}</option>)}
+            </select>
+          </label>
+          <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
+            <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
+              {user ? user.name : copy.enter} <span>{user ? '•' : '↗'}</span>
+            </button>
+            {authMenuOpen && <div className="auth-menu">
             {user ? <>
-              <div className="auth-menu-head"><small>RESULTADOS VINCULADOS A</small><button type="button" aria-label="Fechar menu" onClick={closeAuthMenu}>×</button></div>
+              <div className="auth-menu-head"><small>{copy.linkedResults}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
               <strong>{user.name}</strong>
               {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
-              <button type="button" disabled={authBusy} onClick={() => void signOut()}>Sair</button>
+              <button type="button" disabled={authBusy} onClick={() => void signOut()}>{copy.signOut}</button>
             </> : <>
-              <div className="auth-menu-head"><small>ENTRAR NO RANKING</small><button type="button" aria-label="Fechar menu" onClick={closeAuthMenu}>×</button></div>
-              <div className="auth-tabs" role="tablist" aria-label="Acesso ao ranking">
-                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthFeedback(null); setCaptchaToken(null); }}>Entrar</button>
-                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthFeedback(null); setCaptchaToken(null); }}>Criar conta</button>
+              <div className="auth-menu-head"><small>{copy.enterRanking}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
+              <div className="auth-tabs" role="tablist" aria-label={copy.rankingAccess}>
+                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthFeedback(null); setCaptchaToken(null); }}>{copy.signIn}</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthFeedback(null); setCaptchaToken(null); }}>{copy.createAccount}</button>
               </div>
               {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
               <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
-                <label htmlFor="ranking-username">Nome de usuário</label>
-                <input ref={authUsernameRef} id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={32} required value={authUsername} onChange={(event) => { setAuthUsername(event.target.value); setAuthFeedback(null); }} placeholder="ex.: Victor Amaral" disabled={authBusy || !arenaBackendConfigured} />
-                <span className="field-hint">Pode usar espaços. Esse será o nome exibido no ranking.</span>
-                <label htmlFor="ranking-password">Senha</label>
-                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => { setAuthPassword(event.target.value); setAuthFeedback(null); }} placeholder="Mínimo de 10 caracteres" disabled={authBusy || !arenaBackendConfigured} />
-                <span className={`field-hint ${authPassword.length > 0 && passwordCharactersRemaining === 0 ? 'is-valid' : ''}`}>{authPassword.length === 0 ? 'Use ao menos 10 caracteres.' : passwordCharactersRemaining > 0 ? `Faltam ${passwordCharactersRemaining} ${passwordCharactersRemaining === 1 ? 'caractere' : 'caracteres'}.` : '✓ Senha com tamanho suficiente.'}</span>
+                <label htmlFor="ranking-username">{copy.username}</label>
+                <input ref={authUsernameRef} id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={32} required value={authUsername} onChange={(event) => { setAuthUsername(event.target.value); setAuthFeedback(null); }} placeholder={copy.usernamePlaceholder} disabled={authBusy || !arenaBackendConfigured} />
+                <span className="field-hint">{copy.usernameHint}</span>
+                <label htmlFor="ranking-password">{copy.password}</label>
+                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => { setAuthPassword(event.target.value); setAuthFeedback(null); }} placeholder={copy.passwordPlaceholder} disabled={authBusy || !arenaBackendConfigured} />
+                <span className={`field-hint ${authPassword.length > 0 && passwordCharactersRemaining === 0 ? 'is-valid' : ''}`}>{authPassword.length === 0 ? copy.passwordEmpty : passwordCharactersRemaining > 0 ? passwordRemaining(language, passwordCharactersRemaining) : copy.passwordReady}</span>
                 <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
-                <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? '✓ Verificação anti-bot concluída' : 'Verificando se você é uma pessoa…'}</span>
-                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? 'Criando conta…' : 'Entrando…') : (authMode === 'signup' ? 'Criar conta' : 'Entrar')}</button>
+                <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? copy.captchaReady : copy.captchaPending}</span>
+                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? copy.creatingAccount : copy.signingIn) : (authMode === 'signup' ? copy.createAccount : copy.signIn)}</button>
               </form>
-              <p>Sem e-mail. Se perder a senha, crie outra conta.</p>
-              {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">ou continue com</span>}
-              {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>}
-              {githubAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>}
-              {!arenaBackendConfigured && <p>O ambiente competitivo será ativado após a conexão com o Supabase.</p>}
+              <p>{copy.noEmail}</p>
+              {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">{copy.continueWith}</span>}
+              {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>{copy.continueGoogle}</button>}
+              {githubAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>{copy.continueGithub}</button>}
+              {!arenaBackendConfigured && <p>{copy.backendInactive}</p>}
             </>}
-          </div>}
+            </div>}
+          </div>
         </div>
       </header>
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <span className="eyebrow"><i /> Treino de digitação</span>
-          <h1>Treine com<br /><em>textos científicos.</em></h1>
-          <p>Um texto é sorteado a cada tentativa. Você tem 60 segundos para digitar o máximo que conseguir.</p>
-          <a className="hero-start" href="#treino">Começar agora <span>↓</span></a>
+          <span className="eyebrow"><i /> {copy.heroEyebrow}</span>
+          <h1>{copy.heroTitleLead}<br /><em>{copy.heroTitleAccent}</em></h1>
+          <p>{copy.heroDescription}</p>
+          <a className="hero-start" href="#treino">{copy.startNow} <span>↓</span></a>
         </div>
         <aside className="podium-preview" aria-labelledby="podium-preview-title">
           <header>
-            <div><span>RANKING</span><h2 id="podium-preview-title">Pódio</h2></div>
+            <div><span>{copy.ranking.toUpperCase()}</span><h2 id="podium-preview-title">{copy.podium}</h2></div>
             <b>{previewStatus}</b>
           </header>
-          {podiumRows.length > 0 ? (
+          {leaderboard === null && arenaBackendConfigured ? <p className="podium-empty podium-empty--loading">{copy.loadingRanking}</p> : podiumRows.length > 0 ? (
             <div className="mini-podium">
               {orderedPodiumRows.map((player) => (
                 <article key={player.rank} className={`mini-podium-place mini-podium-place--${player.rank}`}>
-                  <span className="mini-medal">{player.rank}º</span>
-                  <span className="mini-avatar">{player.name.slice(0, 2).toUpperCase()}</span>
+                  <span className="mini-medal">{rankMark(language, player.rank)}</span>
+                  <PlayerAvatar name={player.name} className="mini-avatar" />
                   <strong>{player.name}</strong>
-                  <small>{player.wpm} PPM</small>
+                  <small>{player.wpm} {copy.wpm}</small>
                 </article>
               ))}
             </div>
-          ) : <p className="podium-empty">O primeiro resultado verificado pode ser o seu.</p>}
-          <a href="#ranking">Ver ranking completo <span>→</span></a>
+          ) : <p className="podium-empty">{arenaBackendConfigured ? copy.firstResult : copy.unavailableRanking}</p>}
+          <a href="#ranking">{copy.viewFullRanking} <span>→</span></a>
         </aside>
       </section>
 
-      <section className="workspace" id="treino" aria-label="Área de treino de digitação">
+      <section className="workspace" id="treino" aria-label={copy.trainingArea}>
         <div className="arena-column">
           <div className="metrics" aria-live="polite">
-            <article><span>Velocidade</span><strong>{wpm}</strong><small>PPM</small></article>
-            <article><span>Precisão</span><strong>{accuracy}</strong><small>%</small></article>
-            <article><span>Tempo restante</span><strong>{formatTime(remaining, true)}</strong></article>
-            <article><span>Erros</span><strong>{mistakes}</strong></article>
+            <article><span>{copy.speed}</span><strong>{wpm}</strong><small>{copy.wpm}</small></article>
+            <article><span>{copy.accuracy}</span><strong>{accuracy}</strong><small>%</small></article>
+            <article><span>{copy.timeRemaining}</span><strong>{formatTime(remaining, true)}</strong></article>
+            <article><span>{copy.mistakes}</span><strong>{mistakes}</strong></article>
           </div>
 
-          <article className={`typing-card ${errorPulse ? 'has-error' : ''}`}>
+          <article className={`typing-card ${errorPulse ? 'has-error' : ''}`} onClick={() => { if (!authMenuOpen && status !== 'finished') focusInput(); }}>
             <header className="passage-head">
-              <div><span className="passage-number">TEXTO SORTEADO</span><span className="passage-topic">{passage.eyebrow}</span></div>
-              <button type="button" onClick={(event) => { event.stopPropagation(); reset(); }} aria-label="Recomeçar texto">↻ <span>Recomeçar</span></button>
+              <div><span className="passage-number">{copy.selectedText}</span><span className="passage-topic">{passage.eyebrow}</span></div>
+              <button type="button" onClick={(event) => { event.stopPropagation(); reset(); }} aria-label={copy.restartText}>↻ <span>{copy.restart}</span></button>
             </header>
-            <div className="progress-track" aria-label={`${progress}% do tempo decorrido`}><i style={{ width: `${progress}%` }} /></div>
+            <div className="progress-track" aria-label={copy.elapsedProgress.replace('{progress}', String(progress))}><i style={{ width: `${progress}%` }} /></div>
             <div ref={typingCopyRef} className="typing-copy" aria-label={passage.text}>{renderedText}</div>
             <input
               ref={inputRef}
               className="typing-input"
-              aria-label="Campo de digitação. Comece a digitar o texto exibido."
+              aria-label={copy.inputLabel}
               autoCapitalize="off" autoComplete="off" autoCorrect="off"
               onBlur={(event) => {
                 if (status === 'finished' || authMenuOpen) return;
                 const next = event.relatedTarget as HTMLElement | null;
-                if (next && next.closest('.auth-control')) return;
+                if (next && !next.closest('.typing-card')) return;
                 window.setTimeout(focusInput, 80);
               }}
               onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()}
@@ -519,33 +556,33 @@ export function TypingArena() {
               onPaste={(event) => event.preventDefault()} spellCheck={false}
             />
             <footer className="passage-foot">
-              <p><span className="status-dot" />{status === 'ready' ? 'Comece a digitar para iniciar o tempo' : status === 'running' ? `${Math.ceil(remaining / 1000)} s restantes` : 'Tempo encerrado'}</p>
-              <p>{passage.text[cursor] === '~' ? 'Para ~ no ABNT2: pressione ~ e depois Espaço.' : 'Errou? O cursor espera a tecla correta.'}</p>
+              <p><span className="status-dot" />{status === 'ready' ? copy.startTimer : status === 'running' ? secondsRemaining(language, Math.ceil(remaining / 1000)) : copy.timeEnded}</p>
+              <p>{passage.text[cursor] === '~' ? copy.tildeTip : copy.mistakeTip}</p>
             </footer>
           </article>
 
           <article className="source-card">
-            <div><span>SOBRE O TEXTO</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p><p className="source-reference">{passage.referenceAbnt}</p></div>
-            <a href={passage.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Ver publicação ↗</a>
+            <div><span>{copy.aboutText}</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p><p className="source-reference">{passage.referenceAbnt}</p></div>
+            <a href={passage.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{copy.viewPublication}</a>
           </article>
         </div>
       </section>
 
       <section className="ranking-section" id="ranking" aria-labelledby="ranking-title">
         <header className="ranking-heading">
-          <div><span>PLACAR GERAL</span><h2 id="ranking-title">Ranking completo</h2><p>Resultados de 60 segundos, ordenados por velocidade e precisão.</p></div>
-          {!user && <button type="button" onClick={(event) => { event.stopPropagation(); openAuthMenu('signup'); }}>Criar conta para competir</button>}
+          <div><span>{copy.generalScore}</span><h2 id="ranking-title">{copy.fullRanking}</h2><p>{copy.rankingDescription}</p></div>
+          {!user && <button type="button" onClick={(event) => { event.stopPropagation(); openAuthMenu('signup'); }}>{copy.compete}</button>}
         </header>
 
-        {rankingRows.length > 0 ? <>
-          <div className="full-podium" aria-label="Três primeiros colocados">
+        {leaderboard === null && arenaBackendConfigured ? <p className="ranking-empty ranking-empty--loading">{copy.loadingRanking}</p> : rankingRows.length > 0 ? <>
+          <div className="full-podium" aria-label={copy.topThree}>
             {orderedPodiumRows.map((player) => (
               <article key={player.rank} className={`full-podium-place full-podium-place--${player.rank}`}>
-                <span className="podium-position">{player.rank}º lugar</span>
-                <span className="podium-avatar">{player.name.slice(0, 2).toUpperCase()}</span>
+                <span className="podium-position">{rankMark(language, player.rank)} {copy.place}</span>
+                <PlayerAvatar name={player.name} className="podium-avatar" />
                 <strong>{player.name}</strong>
-                <span>{player.wpm} <small>PPM</small></span>
-                <small>{player.accuracy}% de precisão</small>
+                <span>{player.wpm} <small>{copy.wpm}</small></span>
+                <small>{player.accuracy}% {copy.precision}</small>
               </article>
             ))}
           </div>
@@ -554,40 +591,40 @@ export function TypingArena() {
               {remainingRankingRows.map((player) => (
                 <li key={player.rank}>
                   <span className="rank">{String(player.rank).padStart(2, '0')}</span>
-                  <span className="avatar">{player.name.slice(0, 2).toUpperCase()}</span>
-                  <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% de precisão</small></span>
-                  <strong className="score">{player.wpm}<small>PPM</small></strong>
+                  <PlayerAvatar name={player.name} className="avatar" />
+                  <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% {copy.precision}</small></span>
+                  <strong className="score">{player.wpm}<small>{copy.wpm}</small></strong>
                 </li>
               ))}
             </ol>
           )}
-        </> : <p className="ranking-empty">Ainda não há resultados verificados. Faça o primeiro teste.</p>}
+        </> : <p className="ranking-empty">{arenaBackendConfigured ? copy.emptyRanking : copy.unavailableRanking}</p>}
       </section>
 
       {status === 'finished' && (
         <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) startNextChallenge(); }}>
           <section className="result-card">
-            <button className="result-close" type="button" aria-label="Fechar resultado" onClick={() => startNextChallenge()}>×</button>
-            <span className="result-kicker">RESULTADO</span>
-            <h2 id="result-title">Seus 60 segundos terminaram.</h2>
-            <div className="result-score"><strong>{verifiedResult?.grossWpm ?? wpm}</strong><span>PALAVRAS<br />POR MINUTO</span></div>
-            <div className="result-details"><span><b>{verifiedResult?.accuracy ?? accuracy}%</b> precisão</span><span><b>{mistakes}</b> erros</span><span><b>{formatTime(elapsed)}</b> tempo</span></div>
+            <button className="result-close" type="button" aria-label={copy.closeResult} onClick={() => startNextChallenge()}>×</button>
+            <span className="result-kicker">{copy.result}</span>
+            <h2 id="result-title">{copy.resultTitle}</h2>
+            <div className="result-score"><strong>{verifiedResult?.grossWpm ?? wpm}</strong><span>{copy.wordsPerMinute.split('\n')[0]}<br />{copy.wordsPerMinute.split('\n')[1]}</span></div>
+            <div className="result-details"><span><b>{verifiedResult?.accuracy ?? accuracy}%</b> {copy.accuracy.toLowerCase()}</span><span><b>{mistakes}</b> {copy.errors}</span><span><b>{formatTime(elapsed)}</b> {copy.time}</span></div>
             <p className={`submission-note submission-note--${submission}`}>
-              {submission === 'verifying' && 'Validando ritmo, sequência e tempo no servidor…'}
-              {submission === 'accepted' && `Resultado verificado: ${verifiedResult?.score ?? 0} pontos no ranking.`}
-              {submission === 'review' && 'Resultado salvo para revisão; ele ainda não aparece no ranking.'}
-              {submission === 'rejected' && 'A sessão não passou pela validação competitiva.'}
-              {submission === 'error' && 'Não foi possível validar esta sessão. Seu treino local continua salvo na tela.'}
-              {submission === 'local' && 'Treino concluído. Entre antes da próxima tentativa para disputar o ranking.'}
+              {submission === 'verifying' && copy.verifyingResult}
+              {submission === 'accepted' && copy.acceptedResult.replace('{score}', String(verifiedResult?.score ?? 0))}
+              {submission === 'review' && copy.reviewResult}
+              {submission === 'rejected' && copy.rejectedResult}
+              {submission === 'error' && copy.errorResult}
+              {submission === 'local' && copy.localResult}
             </p>
-            {submission === 'local' && <button className="result-login" type="button" onClick={() => { startNextChallenge(false); openAuthMenu(); }}>Entrar para competir ↗</button>}
-            <button type="button" onClick={() => startNextChallenge()}>Sortear outro texto <span>→</span></button>
+            {submission === 'local' && <button className="result-login" type="button" onClick={() => { startNextChallenge(false); openAuthMenu(); }}>{copy.enterToCompete}</button>}
+            <button type="button" onClick={() => startNextChallenge()}>{copy.nextText} <span>→</span></button>
           </section>
         </div>
       )}
       <footer className="site-footer">
-        <p><strong>LAPIG Type</strong> · Treino de digitação com textos de pesquisa.</p>
-        <a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Ver o projeto no GitHub ↗</a>
+        <p><strong>LAPIG Type</strong> · {copy.footer}</p>
+        <a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">{copy.githubProject}</a>
       </footer>
     </main>
   );

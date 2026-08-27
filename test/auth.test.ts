@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { accountEmail, authFailureMessage, normalizeDisplayName, normalizeUsername } from '../app/lib/supabase-browser.ts';
+import { accountEmail, authFailureMessage, normalizeDisplayName, normalizeUsername, userDisplayName } from '../app/lib/supabase-browser.ts';
 
 test('normalizes a public username into a stable internal account identifier', () => {
   assert.equal(normalizeUsername(' Ana.Cerrado '), 'ana.cerrado');
@@ -22,4 +22,10 @@ test('explains when a requested username is already in use', () => {
     'Esse nome de usuário já está em uso. Tente entrar ou escolha outro nome.',
   );
   assert.match(authFailureMessage(new Error('user_already_exists'), 'signup'), /já está em uso/);
+  assert.match(authFailureMessage(new Error('user_already_exists'), 'signup', 'en'), /already in use/);
+});
+
+test('keeps unsafe account metadata out of public display names', () => {
+  assert.equal(userDisplayName({ id: 'abcd-1234', user_metadata: { name: 'Ana\u202E<script>' } } as never), 'Participante ABCD');
+  assert.equal(userDisplayName({ id: 'abcd-1234', user_metadata: { name: '  María O’Neil  ' } } as never), 'María O’Neil');
 });
