@@ -148,7 +148,7 @@ export function authFailureMessage(error: unknown, mode: 'signin' | 'signup', la
 }
 
 export async function arenaRequest(
-  functionName: 'attempt-start' | 'attempt-finish' | 'leaderboard',
+  functionName: 'attempt-start' | 'attempt-finish' | 'leaderboard' | 'profile' | 'equip-cosmetic',
   init: RequestInit,
   requireAuthentication = false,
 ) {

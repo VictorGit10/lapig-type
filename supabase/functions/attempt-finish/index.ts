@@ -1,6 +1,6 @@
 import type { KeystrokeEvent } from '../_shared/scoring.ts';
 import { scoreAttempt } from '../_shared/scoring.ts';
-import { findPassage } from '../_shared/passages.ts';
+import { findPassage, passages } from '../_shared/passages.ts';
 import {
   adminClient,
   authenticatedUser,
@@ -84,18 +84,27 @@ Deno.serve(async (request) => {
     p_score: verdict.score,
     p_duration_ms: verdict.durationMs,
     p_mistake_count: Number(body.mistakes),
+    p_correct_chars: verdict.correctChars,
+    p_total_passages: passages.length,
     p_trust_status: verdict.trustStatus,
     p_flags: verdict.flags,
   });
   if (finalizeError) return json(request, { error: 'database_error' }, 500);
   if (!finalized) return json(request, { error: 'attempt_already_used' }, 409);
 
+  const { data: unlocked } = verdict.trustStatus === 'accepted'
+    ? await admin.from('user_achievements').select('achievement_key').eq('source_result_id', resultId)
+    : { data: [] };
+
   return json(request, {
     resultId,
     grossWpm: verdict.grossWpm,
     accuracy: verdict.accuracy,
     score: verdict.score,
+    correctChars: verdict.correctChars,
+    completed: verdict.correctChars === passage.text.length,
     trustStatus: verdict.trustStatus,
     ranked: verdict.trustStatus === 'accepted',
+    unlockedAchievements: (unlocked ?? []).map((row) => row.achievement_key),
   });
 });

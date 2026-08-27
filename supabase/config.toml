@@ -391,6 +391,12 @@ verify_jwt = false
 [functions.leaderboard]
 verify_jwt = false
 
+[functions.profile]
+verify_jwt = false
+
+[functions.equip-cosmetic]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

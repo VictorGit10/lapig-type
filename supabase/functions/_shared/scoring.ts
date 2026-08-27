@@ -18,6 +18,7 @@ export type ScoreVerdict = {
   grossWpm: number;
   accuracy: number;
   score: number;
+  correctChars: number;
   durationMs: number;
   trustStatus: 'accepted' | 'review' | 'rejected';
   flags: string[];
@@ -92,5 +93,5 @@ export function scoreAttempt(input: ScoreInput): ScoreVerdict {
 
   const flags = [...new Set([...fatal, ...suspicious])];
   const trustStatus = fatal.length ? 'rejected' : suspicious.length ? 'review' : 'accepted';
-  return { grossWpm, accuracy, score, durationMs, trustStatus, flags };
+  return { grossWpm, accuracy, score, correctChars, durationMs, trustStatus, flags };
 }

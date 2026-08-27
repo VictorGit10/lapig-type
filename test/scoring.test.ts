@@ -31,6 +31,7 @@ test('accepts a plausible partial sequence after the one-minute challenge', () =
   assert.equal(verdict.trustStatus, 'accepted');
   assert.equal(verdict.grossWpm, 60);
   assert.equal(verdict.accuracy, 100);
+  assert.equal(verdict.correctChars, typedExcerpt.length);
   assert.equal(verdict.durationMs, 60_000);
 });
 

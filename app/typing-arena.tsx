@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { passages } from './content';
 import { LANGUAGE_LABELS, passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
 import { PlayerAvatar } from './player-avatar';
+import { ACHIEVEMENTS, cosmeticsFor, DEFAULT_COSMETICS, type CosmeticItem, type EquippedCosmetics, isCosmeticUnlocked, REWARD_UI } from './rewards';
 import {
   arenaBackendConfigured,
   arenaRequest,
@@ -23,21 +24,28 @@ import { TurnstileWidget } from './turnstile-widget';
 type Status = 'ready' | 'running' | 'finished';
 type Submission = 'idle' | 'local' | 'verifying' | 'accepted' | 'review' | 'rejected' | 'error';
 type AttemptEvent = { delta: number; correct: boolean; key: string; repeat: boolean };
-type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number };
-type VerifiedResult = { grossWpm: number; accuracy: number; score: number; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
+type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number; cosmetics?: EquippedCosmetics };
+type VerifiedResult = { grossWpm: number; accuracy: number; score: number; correctChars?: number; completed?: boolean; unlockedAchievements?: string[]; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
 type AuthMode = 'signin' | 'signup';
 type AuthFeedback = { tone: 'error' | 'success'; text: string };
+type PlayerProfile = {
+  achievements: { key: string; unlockedAt: string }[];
+  passageProgress: { passageId: string; passageVersion: number; attempts: number; bestScore: number; bestWpm: number; bestAccuracy: number; bestCorrectChars: number; completed: boolean; completedAt: string | null }[];
+  stats: { practicedPassages: number; completedPassages: number; bestWpm: number; bestAccuracy: number; acceptedAttempts: number };
+  equipped: EquippedCosmetics;
+};
 
 const CHALLENGE_DURATION_MS = 60_000;
 
-const getRandomPassageIndex = (currentIndex?: number) => {
-  if (passages.length <= 1) return 0;
-  if (currentIndex === undefined) return Math.floor(Math.random() * passages.length);
-
-  const candidate = Math.floor(Math.random() * (passages.length - 1));
-  return candidate >= currentIndex ? candidate + 1 : candidate;
+const shuffledPassageIndexes = () => {
+  const indexes = passages.map((_, index) => index);
+  for (let index = indexes.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [indexes[index], indexes[swapIndex]] = [indexes[swapIndex], indexes[index]];
+  }
+  return indexes;
 };
 
 const formatTime = (milliseconds: number, roundUp = false) => {
@@ -67,6 +75,10 @@ export function TypingArena() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
   const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
+  const [rewardsOpen, setRewardsOpen] = useState(false);
+  const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [equipBusy, setEquipBusy] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const authControlRef = useRef<HTMLDivElement>(null);
   const authUsernameRef = useRef<HTMLInputElement>(null);
@@ -80,10 +92,24 @@ export function TypingArena() {
   const keyRepeatRef = useRef(false);
   const initialPassagePickedRef = useRef(false);
   const languageLoadedRef = useRef(false);
+  const passageBagRef = useRef<number[]>([]);
   const typingCopyRef = useRef<HTMLDivElement>(null);
   const currentCharacterRef = useRef<HTMLSpanElement>(null);
   const passage = passages[passageIndex];
   const copy = UI_COPY[language];
+  const rewardCopy = REWARD_UI[language];
+
+  const drawNextPassageIndex = useCallback((currentIndex?: number) => {
+    if (passages.length <= 1) return 0;
+    if (passageBagRef.current.length === 0) {
+      const nextBag = shuffledPassageIndexes();
+      if (currentIndex !== undefined && nextBag[0] === currentIndex) {
+        [nextBag[0], nextBag[1]] = [nextBag[1], nextBag[0]];
+      }
+      passageBagRef.current = nextBag;
+    }
+    return passageBagRef.current.shift() ?? 0;
+  }, []);
 
   const accuracy = cursor + mistakes === 0 ? 100 : Math.round((cursor / (cursor + mistakes)) * 100);
   const minutes = Math.max(elapsed / 60000, 1 / 60000);
@@ -118,8 +144,8 @@ export function TypingArena() {
   useEffect(() => {
     if (initialPassagePickedRef.current) return;
     initialPassagePickedRef.current = true;
-    setPassageIndex(getRandomPassageIndex());
-  }, []);
+    setPassageIndex(drawNextPassageIndex());
+  }, [drawNextPassageIndex]);
 
   const closeAuthMenu = useCallback(() => {
     setAuthMenuOpen(false);
@@ -169,10 +195,32 @@ export function TypingArena() {
     }
   }, []);
 
+  const loadPlayerProfile = useCallback(async () => {
+    if (!user || !arenaBackendConfigured) {
+      setPlayerProfile(null);
+      return;
+    }
+    setProfileBusy(true);
+    try {
+      const response = await arenaRequest('profile', { method: 'GET', cache: 'no-store' }, true);
+      if (!response.ok) throw new Error('profile_failed');
+      setPlayerProfile(await response.json() as PlayerProfile);
+    } catch {
+      setPlayerProfile(null);
+    } finally {
+      setProfileBusy(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     const request = window.setTimeout(() => { void loadLeaderboard(); }, 0);
     return () => window.clearTimeout(request);
   }, [loadLeaderboard]);
+
+  useEffect(() => {
+    const request = window.setTimeout(() => { void loadPlayerProfile(); }, 0);
+    return () => window.clearTimeout(request);
+  }, [loadPlayerProfile]);
 
   useEffect(() => {
     const trackVisibility = () => {
@@ -204,8 +252,8 @@ export function TypingArena() {
   }, [focusInput, passageIndex]);
 
   const startNextChallenge = useCallback((focusAfterReset = true) => {
-    reset(getRandomPassageIndex(passageIndex), focusAfterReset);
-  }, [passageIndex, reset]);
+    reset(drawNextPassageIndex(passageIndex), focusAfterReset);
+  }, [drawNextPassageIndex, passageIndex, reset]);
 
   useEffect(() => {
     if (!authMenuOpen) return;
@@ -225,6 +273,9 @@ export function TypingArena() {
       if (authMenuOpen) {
         event.preventDefault();
         closeAuthMenu();
+      } else if (rewardsOpen) {
+        event.preventDefault();
+        setRewardsOpen(false);
       } else if (status === 'finished') {
         event.preventDefault();
         startNextChallenge();
@@ -232,7 +283,7 @@ export function TypingArena() {
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [authMenuOpen, closeAuthMenu, startNextChallenge, status]);
+  }, [authMenuOpen, closeAuthMenu, rewardsOpen, startNextChallenge, status]);
 
   const startRankedAttempt = useCallback(async () => {
     if (!user || !arenaBackendConfigured) return null;
@@ -275,11 +326,43 @@ export function TypingArena() {
       const result = await response.json() as VerifiedResult;
       setVerifiedResult(result);
       setSubmission(result.trustStatus);
-      if (result.ranked) void loadLeaderboard();
+      if (result.ranked) {
+        void loadLeaderboard();
+        void loadPlayerProfile();
+      }
     } catch {
       setSubmission('error');
     }
-  }, [loadLeaderboard, user]);
+  }, [loadLeaderboard, loadPlayerProfile, user]);
+
+  const openRewards = useCallback(() => {
+    setAuthMenuOpen(false);
+    setRewardsOpen(true);
+    inputRef.current?.blur();
+    if (user) void loadPlayerProfile();
+  }, [loadPlayerProfile, user]);
+
+  const closeRewards = useCallback(() => {
+    setRewardsOpen(false);
+    window.setTimeout(focusInput, 0);
+  }, [focusInput]);
+
+  const equipCosmetic = useCallback(async (item: CosmeticItem) => {
+    if (!user || !playerProfile || equipBusy) return;
+    setEquipBusy(`${item.slot}:${item.key}`);
+    try {
+      const response = await arenaRequest('equip-cosmetic', {
+        method: 'POST',
+        body: JSON.stringify({ slot: item.slot, key: item.key }),
+      }, true);
+      if (!response.ok) throw new Error('equip_failed');
+      const data = await response.json() as { equipped: EquippedCosmetics };
+      setPlayerProfile((current) => current ? { ...current, equipped: data.equipped } : current);
+      void loadLeaderboard();
+    } finally {
+      setEquipBusy(null);
+    }
+  }, [equipBusy, loadLeaderboard, playerProfile, user]);
 
   const finishTimedAttempt = useCallback(() => {
     if (finishedRef.current) return;
@@ -377,7 +460,7 @@ export function TypingArena() {
   }, []);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished' || authMenuOpen) return;
+    if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished' || authMenuOpen || rewardsOpen) return;
     if (event.key === 'Tab' || event.key === 'Dead' || event.key.length === 1) {
       keyRepeatRef.current = event.repeat;
       return;
@@ -386,7 +469,7 @@ export function TypingArena() {
   };
 
   const handleTextInput = (text: string) => {
-    if (status === 'finished' || authMenuOpen) return;
+    if (status === 'finished' || authMenuOpen || rewardsOpen) return;
     const characters = [...text.normalize('NFC')];
     if (characters.length !== 1) return;
     if (cursor >= passage.text.length) return;
@@ -436,6 +519,8 @@ export function TypingArena() {
   );
   const remainingRankingRows = rankingRows.slice(3);
   const previewStatus = !arenaBackendConfigured ? copy.unavailable : leaderboard === null ? copy.loading : copy.updated;
+  const achievementKeys = new Set(playerProfile?.achievements.map((item) => item.key) ?? []);
+  const equippedCosmetics = playerProfile?.equipped ?? DEFAULT_COSMETICS;
 
   return (
     <main className="site-shell">
@@ -465,6 +550,7 @@ export function TypingArena() {
               <div className="auth-menu-head"><small>{copy.linkedResults}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
               <strong>{user.name}</strong>
               {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
+              <button className="auth-rewards-button" type="button" onClick={openRewards}>◌ {rewardCopy.button}</button>
               <button type="button" disabled={authBusy} onClick={() => void signOut()}>{copy.signOut}</button>
             </> : <>
               <div className="auth-menu-head"><small>{copy.enterRanking}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
@@ -512,7 +598,7 @@ export function TypingArena() {
               {orderedPodiumRows.map((player) => (
                 <article key={player.rank} className={`mini-podium-place mini-podium-place--${player.rank}`}>
                   <span className="mini-medal">{rankMark(language, player.rank)}</span>
-                  <PlayerAvatar name={player.name} className="mini-avatar" />
+                  <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="mini-avatar" />
                   <strong>{player.name}</strong>
                   <small>{player.wpm} {copy.wpm}</small>
                 </article>
@@ -535,7 +621,7 @@ export function TypingArena() {
           <article className={`typing-card ${errorPulse ? 'has-error' : ''}`} onClick={() => { if (!authMenuOpen && status !== 'finished') focusInput(); }}>
             <header className="passage-head">
               <div><span className="passage-number">{copy.selectedText}</span><span className="passage-topic">{passage.eyebrow}</span></div>
-              <button type="button" onClick={(event) => { event.stopPropagation(); reset(); }} aria-label={copy.restartText}>↻ <span>{copy.restart}</span></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); startNextChallenge(); }} aria-label={copy.restartText}>↻ <span>{copy.restart}</span></button>
             </header>
             <div className="progress-track" aria-label={copy.elapsedProgress.replace('{progress}', String(progress))}><i style={{ width: `${progress}%` }} /></div>
             <div ref={typingCopyRef} className="typing-copy" aria-label={passage.text}>{renderedText}</div>
@@ -571,7 +657,10 @@ export function TypingArena() {
       <section className="ranking-section" id="ranking" aria-labelledby="ranking-title">
         <header className="ranking-heading">
           <div><span>{copy.generalScore}</span><h2 id="ranking-title">{copy.fullRanking}</h2><p>{copy.rankingDescription}</p></div>
-          {!user && <button type="button" onClick={(event) => { event.stopPropagation(); openAuthMenu('signup'); }}>{copy.compete}</button>}
+          <div className="ranking-actions">
+            <button className="ranking-rewards" type="button" onClick={openRewards}>◌ {rewardCopy.button}</button>
+            {!user && <button type="button" onClick={(event) => { event.stopPropagation(); openAuthMenu('signup'); }}>{copy.compete}</button>}
+          </div>
         </header>
 
         {leaderboard === null && arenaBackendConfigured ? <p className="ranking-empty ranking-empty--loading">{copy.loadingRanking}</p> : rankingRows.length > 0 ? <>
@@ -579,7 +668,7 @@ export function TypingArena() {
             {orderedPodiumRows.map((player) => (
               <article key={player.rank} className={`full-podium-place full-podium-place--${player.rank}`}>
                 <span className="podium-position">{rankMark(language, player.rank)} {copy.place}</span>
-                <PlayerAvatar name={player.name} className="podium-avatar" />
+                <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="podium-avatar" />
                 <strong>{player.name}</strong>
                 <span>{player.wpm} <small>{copy.wpm}</small></span>
                 <small>{player.accuracy}% {copy.precision}</small>
@@ -591,7 +680,7 @@ export function TypingArena() {
               {remainingRankingRows.map((player) => (
                 <li key={player.rank}>
                   <span className="rank">{String(player.rank).padStart(2, '0')}</span>
-                  <PlayerAvatar name={player.name} className="avatar" />
+                  <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="avatar" />
                   <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% {copy.precision}</small></span>
                   <strong className="score">{player.wpm}<small>{copy.wpm}</small></strong>
                 </li>
@@ -600,6 +689,81 @@ export function TypingArena() {
           )}
         </> : <p className="ranking-empty">{arenaBackendConfigured ? copy.emptyRanking : copy.unavailableRanking}</p>}
       </section>
+
+      {rewardsOpen && (
+        <div className="rewards-overlay" role="dialog" aria-modal="true" aria-labelledby="rewards-title" onClick={(event) => { if (event.target === event.currentTarget) closeRewards(); }}>
+          <section className="rewards-panel">
+            <header className="rewards-head">
+              <div><span>{rewardCopy.eyebrow}</span><h2 id="rewards-title">{rewardCopy.title}</h2><p>{rewardCopy.description}</p></div>
+              <button type="button" aria-label={rewardCopy.close} onClick={closeRewards}>×</button>
+            </header>
+
+            <div className="rewards-profile">
+              <div className="rewards-equipped-preview">
+                <span>{rewardCopy.preview}</span>
+                <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={equippedCosmetics} className="rewards-avatar" />
+                <strong>{user?.name ?? 'LAPIG Type'}</strong>
+              </div>
+              <div className="rewards-progress">
+                <span>{rewardCopy.progress}</span>
+                {profileBusy ? <strong>{copy.loading}</strong> : <>
+                  <strong>{playerProfile?.stats.practicedPassages ?? 0}<small> / {passages.length}</small></strong>
+                  <p>{rewardCopy.passages} · {playerProfile?.stats.completedPassages ?? 0} {rewardCopy.completed}</p>
+                </>}
+              </div>
+            </div>
+
+            {!user && <p className="rewards-signin">{rewardCopy.signIn}</p>}
+
+            {([
+              ['avatar', rewardCopy.avatars],
+              ['frame', rewardCopy.frames],
+              ['effect', rewardCopy.effects],
+            ] as const).map(([slot, label]) => (
+              <section className="reward-category" key={slot}>
+                <div className="reward-category-title"><span>{label}</span><i /></div>
+                <div className="reward-grid">
+                  {cosmeticsFor(slot).map((item) => {
+                    const unlocked = isCosmeticUnlocked(item, achievementKeys);
+                    const equipped = equippedCosmetics[slot] === item.key;
+                    const requirement = ACHIEVEMENTS.find((achievement) => achievement.key === item.achievement);
+                    const previewCosmetics = { ...equippedCosmetics, [slot]: item.key };
+                    return (
+                      <article className={`reward-card ${unlocked ? 'is-unlocked' : 'is-locked'} ${equipped ? 'is-equipped' : ''}`} key={`${slot}-${item.key}`}>
+                        <div className="reward-card-visual"><PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={previewCosmetics} className="reward-avatar" /></div>
+                        <div className="reward-card-copy">
+                          <strong>{item.name[language]}</strong>
+                          <p>{item.description[language]}</p>
+                          {!unlocked && requirement && <small>◇ {requirement.criteria[language]}</small>}
+                        </div>
+                        <button type="button" disabled={!user || !unlocked || equipped || Boolean(equipBusy)} onClick={() => void equipCosmetic(item)}>
+                          {equipped ? rewardCopy.equipped : unlocked ? rewardCopy.equip : rewardCopy.locked}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+
+            <section className="reward-category achievements-category">
+              <div className="reward-category-title"><span>{rewardCopy.achievements}</span><i /></div>
+              <div className="achievement-grid">
+                {ACHIEVEMENTS.map((achievement) => {
+                  const unlocked = achievementKeys.has(achievement.key);
+                  return (
+                    <article className={unlocked ? 'is-unlocked' : 'is-locked'} key={achievement.key}>
+                      <b>{achievement.icon}</b>
+                      <div><strong>{achievement.title[language]}</strong><p>{achievement.criteria[language]}</p></div>
+                      <span>{unlocked ? '✓' : '◇'}</span>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          </section>
+        </div>
+      )}
 
       {status === 'finished' && (
         <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) startNextChallenge(); }}>
@@ -617,6 +781,12 @@ export function TypingArena() {
               {submission === 'error' && copy.errorResult}
               {submission === 'local' && copy.localResult}
             </p>
+            {Boolean(verifiedResult?.unlockedAchievements?.length) && (
+              <div className="result-unlocks">
+                <span>{rewardCopy.unlocked}</span>
+                <strong>{verifiedResult?.unlockedAchievements?.map((key) => ACHIEVEMENTS.find((achievement) => achievement.key === key)?.title[language]).filter(Boolean).join(' · ')}</strong>
+              </div>
+            )}
             {submission === 'local' && <button className="result-login" type="button" onClick={() => { startNextChallenge(false); openAuthMenu(); }}>{copy.enterToCompete}</button>}
             <button type="button" onClick={() => startNextChallenge()}>{copy.nextText} <span>→</span></button>
           </section>
