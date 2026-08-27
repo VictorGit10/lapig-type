@@ -5,8 +5,10 @@ import { passages, previewLeaderboard } from './content';
 import {
   arenaBackendConfigured,
   arenaRequest,
+  authFailureMessage,
   githubAuthEnabled,
   googleAuthEnabled,
+  normalizeDisplayName,
   signInWithPassword,
   signInWithProvider,
   signUpWithPassword,
@@ -24,6 +26,7 @@ type VerifiedResult = { grossWpm: number; accuracy: number; score: number; trust
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
 type AuthMode = 'signin' | 'signup';
+type AuthFeedback = { tone: 'error' | 'success'; text: string };
 
 const CHALLENGE_DURATION_MS = 60_000;
 
@@ -52,8 +55,10 @@ export function TypingArena() {
   const [authPassword, setAuthPassword] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaResetSignal, setCaptchaResetSignal] = useState(0);
-  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authFeedback, setAuthFeedback] = useState<AuthFeedback | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const authControlRef = useRef<HTMLDivElement>(null);
+  const authUsernameRef = useRef<HTMLInputElement>(null);
   const attemptRef = useRef<Promise<RankedAttempt | null> | null>(null);
   const eventsRef = useRef<AttemptEvent[]>([]);
   const lastKeyAtRef = useRef<number | null>(null);
@@ -61,6 +66,7 @@ export function TypingArena() {
   const visibilityChangesRef = useRef(0);
   const mistakesRef = useRef(0);
   const finishedRef = useRef(false);
+  const keyRepeatRef = useRef(false);
   const typingCopyRef = useRef<HTMLDivElement>(null);
   const currentCharacterRef = useRef<HTMLSpanElement>(null);
   const passage = passages[passageIndex];
@@ -72,6 +78,22 @@ export function TypingArena() {
   const progress = Math.round((elapsed / CHALLENGE_DURATION_MS) * 100);
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
+
+  const closeAuthMenu = useCallback(() => {
+    setAuthMenuOpen(false);
+    setAuthFeedback(null);
+    window.setTimeout(focusInput, 0);
+  }, [focusInput]);
+
+  const openAuthMenu = useCallback((mode: AuthMode = 'signin') => {
+    setAuthMode(mode);
+    setAuthFeedback(null);
+    setAuthMenuOpen(true);
+    window.setTimeout(() => {
+      authControlRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      authUsernameRef.current?.focus();
+    }, 0);
+  }, []);
 
   useEffect(() => { focusInput(); }, [focusInput, passageIndex]);
 
@@ -116,7 +138,7 @@ export function TypingArena() {
     return () => document.removeEventListener('visibilitychange', trackVisibility);
   }, [status]);
 
-  const reset = useCallback((nextIndex = passageIndex) => {
+  const reset = useCallback((nextIndex = passageIndex, focusAfterReset = true) => {
     setPassageIndex(nextIndex);
     setCursor(0);
     setMistakes(0);
@@ -134,8 +156,35 @@ export function TypingArena() {
     mistakesRef.current = 0;
     finishedRef.current = false;
     if (typingCopyRef.current) typingCopyRef.current.scrollTop = 0;
-    window.setTimeout(focusInput, 0);
+    if (focusAfterReset) window.setTimeout(focusInput, 0);
   }, [focusInput, passageIndex]);
+
+  useEffect(() => {
+    if (!authMenuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (authControlRef.current?.contains(event.target as Node)) return;
+      setAuthMenuOpen(false);
+      setAuthFeedback(null);
+      if ((event.target as Element | null)?.closest?.('.typing-card')) window.setTimeout(focusInput, 0);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer, true);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+  }, [authMenuOpen, focusInput]);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (authMenuOpen) {
+        event.preventDefault();
+        closeAuthMenu();
+      } else if (status === 'finished') {
+        event.preventDefault();
+        reset();
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [authMenuOpen, closeAuthMenu, reset, status]);
 
   const startRankedAttempt = useCallback(async () => {
     if (!user || !arenaBackendConfigured) return null;
@@ -219,11 +268,11 @@ export function TypingArena() {
 
   const beginSignIn = useCallback(async (provider: 'google' | 'github') => {
     setAuthBusy(true);
-    setAuthMessage(null);
+    setAuthFeedback(null);
     try {
       await signInWithProvider(provider);
     } catch {
-      setAuthMessage('Este provedor ainda não está disponível. Use o link por e-mail.');
+      setAuthFeedback({ tone: 'error', text: 'Este provedor ainda não está disponível. Entre com nome e senha.' });
       setAuthBusy(false);
     }
   }, []);
@@ -232,37 +281,38 @@ export function TypingArena() {
 
   const beginPasswordAuth = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalizedUsername = authUsername.trim();
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{2,23}$/.test(normalizedUsername)) {
-      setAuthMessage('Use de 3 a 24 caracteres: letras, números, ponto, hífen ou sublinhado.');
+    try {
+      normalizeDisplayName(authUsername);
+    } catch {
+      setAuthFeedback({ tone: 'error', text: 'Informe um nome de 3 a 32 caracteres. Espaços, letras, números, ponto, hífen e sublinhado são aceitos.' });
       return;
     }
     if (authPassword.length < 10) {
-      setAuthMessage('A senha precisa ter pelo menos 10 caracteres.');
+      setAuthFeedback({ tone: 'error', text: `A senha ainda precisa de ${10 - authPassword.length} ${10 - authPassword.length === 1 ? 'caractere' : 'caracteres'}.` });
       return;
     }
     if (!turnstileSiteKey) {
-      setAuthMessage('A proteção anti-bot não está configurada.');
+      setAuthFeedback({ tone: 'error', text: 'A proteção anti-bot não está configurada.' });
       return;
     }
     if (!captchaToken) {
-      setAuthMessage('Aguarde a verificação anti-bot e tente novamente.');
+      setAuthFeedback({ tone: 'error', text: 'A verificação anti-bot ainda não terminou. Aguarde o indicador verde e tente novamente.' });
       setCaptchaResetSignal((value) => value + 1);
       return;
     }
     setAuthBusy(true);
-    setAuthMessage(null);
+    setAuthFeedback(null);
     try {
       if (authMode === 'signup') {
         await signUpWithPassword(authUsername, authPassword, captchaToken);
-        setAuthMessage('Conta criada. Você já está participando do ranking.');
+        setAuthFeedback({ tone: 'success', text: 'Conta criada com sucesso. Você já está participando do ranking.' });
       } else {
         await signInWithPassword(authUsername, authPassword, captchaToken);
-        setAuthMessage('Entrada realizada com sucesso.');
+        setAuthFeedback({ tone: 'success', text: 'Entrada realizada com sucesso.' });
       }
       setAuthPassword('');
     } catch (error) {
-      setAuthMessage(authFailureMessage(error, authMode));
+      setAuthFeedback({ tone: 'error', text: authFailureMessage(error, authMode) });
     } finally {
       setAuthBusy(false);
       setCaptchaToken(null);
@@ -280,9 +330,17 @@ export function TypingArena() {
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.ctrlKey || event.metaKey || event.altKey || status === 'finished' || authMenuOpen) return;
-    if (event.key === 'Tab') return;
-    event.preventDefault();
-    if (event.key.length !== 1) return;
+    if (event.key === 'Tab' || event.key === 'Dead' || event.key.length === 1) {
+      keyRepeatRef.current = event.repeat;
+      return;
+    }
+    if (event.key === 'Backspace' || event.key === 'Enter') event.preventDefault();
+  };
+
+  const handleTextInput = (text: string) => {
+    if (status === 'finished' || authMenuOpen) return;
+    const characters = [...text.normalize('NFC')];
+    if (characters.length !== 1) return;
     if (cursor >= passage.text.length) return;
 
     const now = performance.now();
@@ -293,13 +351,15 @@ export function TypingArena() {
       attemptRef.current = startRankedAttempt();
     }
 
-    const correct = event.key.normalize('NFC') === passage.text[cursor].normalize('NFC');
+    const enteredCharacter = characters[0];
+    const correct = enteredCharacter === passage.text[cursor].normalize('NFC');
     eventsRef.current.push({
       delta: lastKeyAtRef.current === null ? 0 : Math.max(0, Math.round(now - lastKeyAtRef.current)),
       correct,
-      key: event.key.normalize('NFC'),
-      repeat: event.repeat,
+      key: enteredCharacter,
+      repeat: keyRepeatRef.current,
     });
+    keyRepeatRef.current = false;
     lastKeyAtRef.current = now;
 
     if (!correct) {
@@ -315,6 +375,8 @@ export function TypingArena() {
     setCursor(nextCursor);
   };
 
+  const passwordCharactersRemaining = Math.max(0, 10 - authPassword.length);
+
   const renderedText = useMemo(() => passage.text.split('').map((character, index) => {
     const state = index < cursor ? 'typed' : index === cursor ? 'current' : 'pending';
     return <span ref={index === cursor ? currentCharacterRef : undefined} className={`character character--${state}`} key={`${index}-${character}`}>{character}</span>;
@@ -322,7 +384,7 @@ export function TypingArena() {
   const rankingRows = leaderboard ?? previewLeaderboard;
 
   return (
-    <main className="site-shell" onClick={() => { if (!authMenuOpen) focusInput(); }}>
+    <main className="site-shell" onClick={() => { if (!authMenuOpen && status !== 'finished') focusInput(); }}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="LAPIG Type — início">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
@@ -331,25 +393,30 @@ export function TypingArena() {
         <nav className="nav-links" aria-label="Navegação principal">
           <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="#sobre">Sobre</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Código ↗</a>
         </nav>
-        <div className="auth-control" onClick={(event) => event.stopPropagation()}>
-          <button className="login-button" type="button" onClick={() => setAuthMenuOpen((value) => !value)} aria-expanded={authMenuOpen}>
+        <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
+          <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
             {user ? user.name : 'Entrar'} <span>{user ? '•' : '↗'}</span>
           </button>
           {authMenuOpen && <div className="auth-menu">
             {user ? <>
-              <small>RESULTADOS VINCULADOS A</small><strong>{user.name}</strong>
+              <div className="auth-menu-head"><small>RESULTADOS VINCULADOS A</small><button type="button" aria-label="Fechar menu" onClick={closeAuthMenu}>×</button></div>
+              <strong>{user.name}</strong>
+              {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
               <button type="button" disabled={authBusy} onClick={() => void signOut()}>Sair</button>
             </> : <>
-              <small>ENTRAR NO RANKING</small>
+              <div className="auth-menu-head"><small>ENTRAR NO RANKING</small><button type="button" aria-label="Fechar menu" onClick={closeAuthMenu}>×</button></div>
               <div className="auth-tabs" role="tablist" aria-label="Acesso ao ranking">
-                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthMessage(null); setCaptchaToken(null); }}>Entrar</button>
-                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage(null); setCaptchaToken(null); }}>Criar conta</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthFeedback(null); setCaptchaToken(null); }}>Entrar</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthFeedback(null); setCaptchaToken(null); }}>Criar conta</button>
               </div>
+              {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
               <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
                 <label htmlFor="ranking-username">Nome de usuário</label>
-                <input id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={24} pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,23}" required value={authUsername} onChange={(event) => setAuthUsername(event.target.value)} placeholder="ex.: ana.cerrado" disabled={authBusy || !arenaBackendConfigured} />
+                <input ref={authUsernameRef} id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={32} required value={authUsername} onChange={(event) => { setAuthUsername(event.target.value); setAuthFeedback(null); }} placeholder="ex.: Victor Amaral" disabled={authBusy || !arenaBackendConfigured} />
+                <span className="field-hint">Pode usar espaços. Esse será o nome exibido no ranking.</span>
                 <label htmlFor="ranking-password">Senha</label>
-                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="Mínimo de 10 caracteres" disabled={authBusy || !arenaBackendConfigured} />
+                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => { setAuthPassword(event.target.value); setAuthFeedback(null); }} placeholder="Mínimo de 10 caracteres" disabled={authBusy || !arenaBackendConfigured} />
+                <span className={`field-hint ${authPassword.length > 0 && passwordCharactersRemaining === 0 ? 'is-valid' : ''}`}>{authPassword.length === 0 ? 'Use ao menos 10 caracteres.' : passwordCharactersRemaining > 0 ? `Faltam ${passwordCharactersRemaining} ${passwordCharactersRemaining === 1 ? 'caractere' : 'caracteres'}.` : '✓ Senha com tamanho suficiente.'}</span>
                 <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
                 <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? '✓ Verificação anti-bot concluída' : 'Verificando se você é uma pessoa…'}</span>
                 <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? 'Criando conta…' : 'Entrando…') : (authMode === 'signup' ? 'Criar conta' : 'Entrar')}</button>
@@ -358,7 +425,6 @@ export function TypingArena() {
               {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">ou continue com</span>}
               {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>Continuar com Google</button>}
               {githubAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('github')}>Continuar com GitHub</button>}
-              {authMessage && <p role="status">{authMessage}</p>}
               {!arenaBackendConfigured && <p>O ambiente competitivo será ativado após a conexão com o Supabase.</p>}
             </>}
           </div>}
@@ -404,12 +470,13 @@ export function TypingArena() {
                 window.setTimeout(focusInput, 80);
               }}
               onCopy={(event) => event.preventDefault()} onCut={(event) => event.preventDefault()}
-              onKeyDown={handleKeyDown} onPaste={(event) => event.preventDefault()}
-              spellCheck={false} value="" onChange={() => undefined}
+              onDrop={(event) => event.preventDefault()} onKeyDown={handleKeyDown}
+              onInput={(event) => { const text = event.currentTarget.value; event.currentTarget.value = ''; handleTextInput(text); }}
+              onPaste={(event) => event.preventDefault()} spellCheck={false}
             />
             <footer className="passage-foot">
               <p><span className="status-dot" />{status === 'ready' ? 'A primeira tecla inicia os 60 segundos' : status === 'running' ? `${Math.ceil(remaining / 1000)} s restantes` : 'Tempo encerrado'}</p>
-              <p>Errou? O cursor espera a tecla correta.</p>
+              <p>{passage.text[cursor] === '~' ? 'Para ~ no ABNT2: pressione ~ e depois Espaço.' : 'Errou? O cursor espera a tecla correta.'}</p>
             </footer>
           </article>
 
@@ -437,8 +504,9 @@ export function TypingArena() {
       <section className="about-strip" id="sobre"><span>01 · DIGITE</span><i /><span>02 · APRENDA</span><i /><span>03 · COMPARE</span></section>
 
       {status === 'finished' && (
-        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => event.stopPropagation()}>
+        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) reset(); }}>
           <section className="result-card">
+            <button className="result-close" type="button" aria-label="Fechar resultado" onClick={() => reset()}>×</button>
             <span className="result-kicker">DESAFIO DE 1 MINUTO</span>
             <h2 id="result-title">Tempo encerrado.<br />Agora vale o ranking.</h2>
             <div className="result-score"><strong>{verifiedResult?.grossWpm ?? wpm}</strong><span>PALAVRAS<br />POR MINUTO</span></div>
@@ -451,7 +519,7 @@ export function TypingArena() {
               {submission === 'error' && 'Não foi possível validar esta sessão. Seu treino local continua salvo na tela.'}
               {submission === 'local' && 'Treino concluído. Entre antes da próxima tentativa para disputar o ranking.'}
             </p>
-            {submission === 'local' && <button className="result-login" type="button" onClick={() => setAuthMenuOpen(true)}>Entrar para competir ↗</button>}
+            {submission === 'local' && <button className="result-login" type="button" onClick={() => { reset(passageIndex, false); openAuthMenu(); }}>Entrar para competir ↗</button>}
             <button type="button" onClick={() => reset((passageIndex + 1) % passages.length)}>Próximo texto <span>→</span></button>
             <button className="result-secondary" type="button" onClick={() => reset()}>Tentar novamente</button>
           </section>
@@ -463,17 +531,4 @@ export function TypingArena() {
       </footer>
     </main>
   );
-}
-
-function authFailureMessage(error: unknown, mode: AuthMode) {
-  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (code === 'captcha_failed' || message.includes('captcha')) return 'A verificação anti-bot expirou. Aguarde a renovação e tente novamente.';
-  if (code === 'weak_password' || message.includes('password')) return 'A senha não foi aceita. Use pelo menos 10 caracteres.';
-  if (code === 'user_already_exists' || message.includes('already registered')) return 'Esse nome de usuário já está em uso.';
-  if (code === 'over_request_rate_limit' || message.includes('rate limit')) return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos.';
-  if (code === 'email_address_invalid' || message.includes('invalid email')) return 'O identificador interno da conta não foi aceito. Tente outro nome.';
-  return mode === 'signup'
-    ? 'Não foi possível criar a conta agora. A verificação foi renovada; tente novamente.'
-    : 'Usuário ou senha incorretos. A verificação foi renovada para uma nova tentativa.';
 }
