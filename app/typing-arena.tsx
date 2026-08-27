@@ -30,6 +30,14 @@ type AuthFeedback = { tone: 'error' | 'success'; text: string };
 
 const CHALLENGE_DURATION_MS = 60_000;
 
+const getRandomPassageIndex = (currentIndex?: number) => {
+  if (passages.length <= 1) return 0;
+  if (currentIndex === undefined) return Math.floor(Math.random() * passages.length);
+
+  const candidate = Math.floor(Math.random() * (passages.length - 1));
+  return candidate >= currentIndex ? candidate + 1 : candidate;
+};
+
 const formatTime = (milliseconds: number, roundUp = false) => {
   const seconds = Math.max(0, roundUp ? Math.ceil(milliseconds / 1000) : Math.floor(milliseconds / 1000));
   const minutes = Math.floor(seconds / 60);
@@ -67,6 +75,7 @@ export function TypingArena() {
   const mistakesRef = useRef(0);
   const finishedRef = useRef(false);
   const keyRepeatRef = useRef(false);
+  const initialPassagePickedRef = useRef(false);
   const typingCopyRef = useRef<HTMLDivElement>(null);
   const currentCharacterRef = useRef<HTMLSpanElement>(null);
   const passage = passages[passageIndex];
@@ -78,6 +87,12 @@ export function TypingArena() {
   const progress = Math.round((elapsed / CHALLENGE_DURATION_MS) * 100);
 
   const focusInput = useCallback(() => inputRef.current?.focus(), []);
+
+  useEffect(() => {
+    if (initialPassagePickedRef.current) return;
+    initialPassagePickedRef.current = true;
+    setPassageIndex(getRandomPassageIndex());
+  }, []);
 
   const closeAuthMenu = useCallback(() => {
     setAuthMenuOpen(false);
@@ -159,6 +174,10 @@ export function TypingArena() {
     if (focusAfterReset) window.setTimeout(focusInput, 0);
   }, [focusInput, passageIndex]);
 
+  const startNextChallenge = useCallback((focusAfterReset = true) => {
+    reset(getRandomPassageIndex(passageIndex), focusAfterReset);
+  }, [passageIndex, reset]);
+
   useEffect(() => {
     if (!authMenuOpen) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -179,12 +198,12 @@ export function TypingArena() {
         closeAuthMenu();
       } else if (status === 'finished') {
         event.preventDefault();
-        reset();
+        startNextChallenge();
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [authMenuOpen, closeAuthMenu, reset, status]);
+  }, [authMenuOpen, closeAuthMenu, startNextChallenge, status]);
 
   const startRankedAttempt = useCallback(async () => {
     if (!user || !arenaBackendConfigured) return null;
@@ -382,16 +401,24 @@ export function TypingArena() {
     return <span ref={index === cursor ? currentCharacterRef : undefined} className={`character character--${state}`} key={`${index}-${character}`}>{character}</span>;
   }), [cursor, passage.text]);
   const rankingRows = leaderboard ?? previewLeaderboard;
+  const podiumRows = rankingRows.slice(0, 3);
+  const orderedPodiumRows = [podiumRows[1], podiumRows[0], podiumRows[2]].filter(
+    (player): player is LeaderboardRow => Boolean(player),
+  );
+  const remainingRankingRows = rankingRows.slice(3);
+  const previewStatus = !arenaBackendConfigured ? 'DEMONSTRAÇÃO' : leaderboard === null ? 'CARREGANDO' : 'ATUALIZADO';
 
   return (
     <main className="site-shell" onClick={() => { if (!authMenuOpen && status !== 'finished') focusInput(); }}>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="LAPIG Type — início">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span className="brand-copy"><strong>LAPIG</strong><small>TYPE</small></span>
+          <span className="brand-keys" aria-hidden="true">
+            {'LAPIG'.split('').map((letter) => <i key={letter}>{letter}</i>)}
+          </span>
+          <span className="brand-type" aria-hidden="true">TYPE<b /></span>
         </a>
         <nav className="nav-links" aria-label="Navegação principal">
-          <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="#sobre">Sobre</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Código ↗</a>
+          <a className="active" href="#treino">Treino</a><a href="#ranking">Ranking</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Código ↗</a>
         </nav>
         <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
           <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
@@ -432,14 +459,31 @@ export function TypingArena() {
       </header>
 
       <section className="hero" id="top">
-        <div>
-          <span className="eyebrow"><i /> Ciência na ponta dos dedos</span>
-          <h1>Leia o território.<br /><em>Digite o futuro.</em></h1>
-          <p>Treine velocidade e precisão com pesquisas que ajudam a compreender o Cerrado e as transformações do Brasil.</p>
+        <div className="hero-copy">
+          <span className="eyebrow"><i /> Treino de digitação</span>
+          <h1>Treine com<br /><em>textos científicos.</em></h1>
+          <p>Um texto é sorteado a cada tentativa. Você tem 60 segundos para digitar o máximo que conseguir.</p>
+          <a className="hero-start" href="#treino">Começar agora <span>↓</span></a>
         </div>
-        <div className="hero-seal" aria-label="Desafio atual: Cerrado em foco">
-          <span>DESAFIO ATUAL</span><strong>Cerrado<br />em foco</strong><small>03 textos selecionados</small>
-        </div>
+        <aside className="podium-preview" aria-labelledby="podium-preview-title">
+          <header>
+            <div><span>RANKING</span><h2 id="podium-preview-title">Pódio</h2></div>
+            <b>{previewStatus}</b>
+          </header>
+          {podiumRows.length > 0 ? (
+            <div className="mini-podium">
+              {orderedPodiumRows.map((player) => (
+                <article key={player.rank} className={`mini-podium-place mini-podium-place--${player.rank}`}>
+                  <span className="mini-medal">{player.rank}º</span>
+                  <span className="mini-avatar">{player.name.slice(0, 2).toUpperCase()}</span>
+                  <strong>{player.name}</strong>
+                  <small>{player.wpm} PPM</small>
+                </article>
+              ))}
+            </div>
+          ) : <p className="podium-empty">O primeiro resultado verificado pode ser o seu.</p>}
+          <a href="#ranking">Ver ranking completo <span>→</span></a>
+        </aside>
       </section>
 
       <section className="workspace" id="treino" aria-label="Área de treino de digitação">
@@ -453,7 +497,7 @@ export function TypingArena() {
 
           <article className={`typing-card ${errorPulse ? 'has-error' : ''}`}>
             <header className="passage-head">
-              <div><span className="passage-number">TEXTO 0{passageIndex + 1}</span><span className="passage-topic">{passage.eyebrow}</span></div>
+              <div><span className="passage-number">TEXTO SORTEADO</span><span className="passage-topic">{passage.eyebrow}</span></div>
               <button type="button" onClick={(event) => { event.stopPropagation(); reset(); }} aria-label="Recomeçar texto">↻ <span>Recomeçar</span></button>
             </header>
             <div className="progress-track" aria-label={`${progress}% do tempo decorrido`}><i style={{ width: `${progress}%` }} /></div>
@@ -475,40 +519,57 @@ export function TypingArena() {
               onPaste={(event) => event.preventDefault()} spellCheck={false}
             />
             <footer className="passage-foot">
-              <p><span className="status-dot" />{status === 'ready' ? 'A primeira tecla inicia os 60 segundos' : status === 'running' ? `${Math.ceil(remaining / 1000)} s restantes` : 'Tempo encerrado'}</p>
+              <p><span className="status-dot" />{status === 'ready' ? 'Comece a digitar para iniciar o tempo' : status === 'running' ? `${Math.ceil(remaining / 1000)} s restantes` : 'Tempo encerrado'}</p>
               <p>{passage.text[cursor] === '~' ? 'Para ~ no ABNT2: pressione ~ e depois Espaço.' : 'Errou? O cursor espera a tecla correta.'}</p>
             </footer>
           </article>
 
           <article className="source-card">
-            <div><span>FONTE DA PESQUISA</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p><p className="source-reference">{passage.referenceAbnt}</p></div>
+            <div><span>SOBRE O TEXTO</span><h2>{passage.title}</h2><p>{passage.authors} · {passage.year}</p><p className="source-reference">{passage.referenceAbnt}</p></div>
             <a href={passage.sourceUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Ver publicação ↗</a>
           </article>
         </div>
-
-        <aside className="ranking-card" id="ranking">
-          <header><div><span>PLACAR GERAL</span><h2>Mais velozes</h2></div><b>{!arenaBackendConfigured ? 'DEMO' : leaderboard === null ? 'ABRINDO' : 'AO VIVO'}</b></header>
-          <ol>{rankingRows.map((player) => (
-            <li key={player.rank} className={player.rank <= 3 ? `podium podium-${player.rank}` : ''}>
-              <span className="rank">{String(player.rank).padStart(2, '0')}</span>
-              <span className="avatar">{player.name.slice(0, 2).toUpperCase()}</span>
-              <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% precisão</small></span>
-              <strong className="score">{player.wpm}<small>PPM</small></strong>
-            </li>
-          ))}{leaderboard?.length === 0 && <li className="ranking-empty"><span>O placar está pronto para o primeiro resultado verificado.</span></li>}</ol>
-          <a href="#ranking">Ver ranking completo <span>→</span></a>
-          <p className="ranking-note">Entre para registrar resultados verificados no placar.</p>
-        </aside>
       </section>
 
-      <section className="about-strip" id="sobre"><span>01 · DIGITE</span><i /><span>02 · APRENDA</span><i /><span>03 · COMPARE</span></section>
+      <section className="ranking-section" id="ranking" aria-labelledby="ranking-title">
+        <header className="ranking-heading">
+          <div><span>PLACAR GERAL</span><h2 id="ranking-title">Ranking completo</h2><p>Resultados de 60 segundos, ordenados por velocidade e precisão.</p></div>
+          {!user && <button type="button" onClick={(event) => { event.stopPropagation(); openAuthMenu('signup'); }}>Criar conta para competir</button>}
+        </header>
+
+        {rankingRows.length > 0 ? <>
+          <div className="full-podium" aria-label="Três primeiros colocados">
+            {orderedPodiumRows.map((player) => (
+              <article key={player.rank} className={`full-podium-place full-podium-place--${player.rank}`}>
+                <span className="podium-position">{player.rank}º lugar</span>
+                <span className="podium-avatar">{player.name.slice(0, 2).toUpperCase()}</span>
+                <strong>{player.name}</strong>
+                <span>{player.wpm} <small>PPM</small></span>
+                <small>{player.accuracy}% de precisão</small>
+              </article>
+            ))}
+          </div>
+          {remainingRankingRows.length > 0 && (
+            <ol className="ranking-list">
+              {remainingRankingRows.map((player) => (
+                <li key={player.rank}>
+                  <span className="rank">{String(player.rank).padStart(2, '0')}</span>
+                  <span className="avatar">{player.name.slice(0, 2).toUpperCase()}</span>
+                  <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% de precisão</small></span>
+                  <strong className="score">{player.wpm}<small>PPM</small></strong>
+                </li>
+              ))}
+            </ol>
+          )}
+        </> : <p className="ranking-empty">Ainda não há resultados verificados. Faça o primeiro teste.</p>}
+      </section>
 
       {status === 'finished' && (
-        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) reset(); }}>
+        <div className="result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" onClick={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) startNextChallenge(); }}>
           <section className="result-card">
-            <button className="result-close" type="button" aria-label="Fechar resultado" onClick={() => reset()}>×</button>
-            <span className="result-kicker">DESAFIO DE 1 MINUTO</span>
-            <h2 id="result-title">Tempo encerrado.<br />Agora vale o ranking.</h2>
+            <button className="result-close" type="button" aria-label="Fechar resultado" onClick={() => startNextChallenge()}>×</button>
+            <span className="result-kicker">RESULTADO</span>
+            <h2 id="result-title">Seus 60 segundos terminaram.</h2>
             <div className="result-score"><strong>{verifiedResult?.grossWpm ?? wpm}</strong><span>PALAVRAS<br />POR MINUTO</span></div>
             <div className="result-details"><span><b>{verifiedResult?.accuracy ?? accuracy}%</b> precisão</span><span><b>{mistakes}</b> erros</span><span><b>{formatTime(elapsed)}</b> tempo</span></div>
             <p className={`submission-note submission-note--${submission}`}>
@@ -519,14 +580,13 @@ export function TypingArena() {
               {submission === 'error' && 'Não foi possível validar esta sessão. Seu treino local continua salvo na tela.'}
               {submission === 'local' && 'Treino concluído. Entre antes da próxima tentativa para disputar o ranking.'}
             </p>
-            {submission === 'local' && <button className="result-login" type="button" onClick={() => { reset(passageIndex, false); openAuthMenu(); }}>Entrar para competir ↗</button>}
-            <button type="button" onClick={() => reset((passageIndex + 1) % passages.length)}>Próximo texto <span>→</span></button>
-            <button className="result-secondary" type="button" onClick={() => reset()}>Tentar novamente</button>
+            {submission === 'local' && <button className="result-login" type="button" onClick={() => { startNextChallenge(false); openAuthMenu(); }}>Entrar para competir ↗</button>}
+            <button type="button" onClick={() => startNextChallenge()}>Sortear outro texto <span>→</span></button>
           </section>
         </div>
       )}
       <footer className="site-footer">
-        <p>Uma experiência aberta de ciência, território e digitação.</p>
+        <p><strong>LAPIG Type</strong> · Treino de digitação com textos de pesquisa.</p>
         <a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">Ver o projeto no GitHub ↗</a>
       </footer>
     </main>
