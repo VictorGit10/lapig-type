@@ -342,8 +342,8 @@ export function TypingArena() {
             </> : <>
               <small>ENTRAR NO RANKING</small>
               <div className="auth-tabs" role="tablist" aria-label="Acesso ao ranking">
-                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Entrar</button>
-                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage(null); setCaptchaResetSignal((value) => value + 1); }}>Criar conta</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthMessage(null); setCaptchaToken(null); }}>Entrar</button>
+                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthMessage(null); setCaptchaToken(null); }}>Criar conta</button>
               </div>
               <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
                 <label htmlFor="ranking-username">Nome de usuário</label>

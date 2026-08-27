@@ -25,6 +25,7 @@ type TurnstileWidgetProps = {
 export function TurnstileWidget({ action, resetSignal, siteKey, onToken }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const previousResetSignalRef = useRef(resetSignal);
   const [scriptReady, setScriptReady] = useState(false);
 
   useEffect(() => {
@@ -46,6 +47,8 @@ export function TurnstileWidget({ action, resetSignal, siteKey, onToken }: Turns
   }, [action, onToken, scriptReady, siteKey]);
 
   useEffect(() => {
+    if (previousResetSignalRef.current === resetSignal) return;
+    previousResetSignalRef.current = resetSignal;
     if (!widgetIdRef.current || !window.turnstile) return;
     window.turnstile.reset(widgetIdRef.current);
     onToken(null);
