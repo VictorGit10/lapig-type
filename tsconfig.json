@@ -32,5 +32,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "supabase/functions/attempt-*/**", "supabase/functions/leaderboard/**", "supabase/functions/profile/**", "supabase/functions/equip-cosmetic/**", "supabase/functions/_shared/http.ts"]
+  "exclude": ["node_modules", "supabase/functions/attempt-*/**", "supabase/functions/leaderboard/**", "supabase/functions/profile/**", "supabase/functions/equip-cosmetic/**", "supabase/functions/save-loadout/**", "supabase/functions/_shared/http.ts"]
 }

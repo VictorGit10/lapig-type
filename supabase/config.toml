@@ -397,6 +397,9 @@ verify_jwt = false
 [functions.equip-cosmetic]
 verify_jwt = false
 
+[functions.save-loadout]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
   const [achievementsResult, progressResult, cosmeticsResult] = await Promise.all([
     admin.from('user_achievements').select('achievement_key,unlocked_at').eq('user_id', user.id).order('unlocked_at'),
     admin.from('passage_progress').select('passage_id,passage_version,attempts,best_score,best_wpm,best_accuracy,best_correct_chars,completed,completed_at').eq('user_id', user.id).order('first_attempted_at'),
-    admin.from('profile_cosmetics').select('avatar_key,frame_key,effect_key').eq('user_id', user.id).maybeSingle(),
+    admin.from('profile_cosmetics').select('avatar_key,mark_key,palette_key,frame_key,effect_key').eq('user_id', user.id).maybeSingle(),
   ]);
 
   if (achievementsResult.error || progressResult.error || cosmeticsResult.error) {
@@ -42,6 +42,8 @@ Deno.serve(async (request) => {
     },
     equipped: cosmeticsResult.data ? {
       avatar: cosmeticsResult.data.avatar_key,
+      mark: cosmeticsResult.data.mark_key,
+      palette: cosmeticsResult.data.palette_key,
       frame: cosmeticsResult.data.frame_key,
       effect: cosmeticsResult.data.effect_key,
     } : DEFAULT_COSMETICS,
