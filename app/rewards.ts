@@ -1,41 +1,49 @@
 import type { Language } from './i18n';
 
-export type CosmeticSlot = 'avatar' | 'border' | 'letter' | 'effect';
-export type EquippedCosmetics = Record<CosmeticSlot, string>;
-export type CosmeticItem = {
+export const PIXEL_GRID_SIZE = 16;
+export const TRANSPARENT_PIXEL = -1;
+
+export type AvatarLoadout = { pixels: number[]; effect: string };
+export type EffectItem = {
   key: string;
-  slot: CosmeticSlot;
   achievement: string | null;
   name: Record<Language, string>;
   description: Record<Language, string>;
 };
 
-export const COSMETIC_SLOTS: CosmeticSlot[] = ['avatar', 'border', 'letter', 'effect'];
-export const DEFAULT_COSMETICS: EquippedCosmetics = { avatar: 'topographic', border: 'forest', letter: 'ink', effect: 'none' };
+export const PIXEL_PALETTE = [
+  { key: 'ink', color: '#132a22' }, { key: 'black', color: '#07120e' },
+  { key: 'forest-dark', color: '#17483a' }, { key: 'forest', color: '#176b45' },
+  { key: 'leaf', color: '#3f8b5b' }, { key: 'moss', color: '#8aa45c' },
+  { key: 'lime', color: '#c9e65c' }, { key: 'paper', color: '#fbfaf4' },
+  { key: 'white', color: '#ffffff' }, { key: 'silver', color: '#c8cdc8' },
+  { key: 'slate', color: '#63716c' }, { key: 'brown', color: '#6f4934' },
+  { key: 'tan', color: '#b8865b' }, { key: 'sand', color: '#e2bd83' },
+  { key: 'cream', color: '#f7d8b5' }, { key: 'peach', color: '#f3b390' },
+  { key: 'clay', color: '#b95835' }, { key: 'rust', color: '#d66a3c' },
+  { key: 'orange', color: '#f08a3c' }, { key: 'sun', color: '#f4bd48' },
+  { key: 'yellow', color: '#ffe36b' }, { key: 'red', color: '#c74343' },
+  { key: 'coral', color: '#ee6b5f' }, { key: 'pink', color: '#e78aaa' },
+  { key: 'magenta', color: '#c34d83' }, { key: 'purple', color: '#7553a6' },
+  { key: 'violet', color: '#9b73d1' }, { key: 'navy', color: '#234a66' },
+  { key: 'blue', color: '#3d76b9' }, { key: 'sky', color: '#70b7d4' },
+  { key: 'cyan', color: '#55c6c3' }, { key: 'teal', color: '#288b7b' },
+] as const;
 
-export const COSMETICS: CosmeticItem[] = [
-  { key: 'topographic', slot: 'avatar', achievement: null, name: { pt: 'Topografia', en: 'Topography', es: 'Topografía' }, description: { pt: 'Curvas de nível em alto contraste.', en: 'High-contrast contour lines.', es: 'Curvas de nivel de alto contraste.' } },
-  { key: 'parcels', slot: 'avatar', achievement: 'first_verified', name: { pt: 'Parcelas', en: 'Parcels', es: 'Parcelas' }, description: { pt: 'Talhões vistos do alto.', en: 'Field parcels seen from above.', es: 'Parcelas vistas desde arriba.' } },
-  { key: 'cerrado', slot: 'avatar', achievement: 'speed_50', name: { pt: 'Cerrado', en: 'Cerrado', es: 'Cerrado' }, description: { pt: 'Horizonte, sol e vegetação.', en: 'Horizon, sun, and vegetation.', es: 'Horizonte, sol y vegetación.' } },
-  { key: 'radar', slot: 'avatar', achievement: 'top_3', name: { pt: 'Radar', en: 'Radar', es: 'Radar' }, description: { pt: 'Anéis de sensoriamento remoto.', en: 'Remote-sensing rings.', es: 'Anillos de teledetección.' } },
-  { key: 'atlas', slot: 'avatar', achievement: 'all_passages_completed', name: { pt: 'Atlas', en: 'Atlas', es: 'Atlas' }, description: { pt: 'Uma grade global completa.', en: 'A complete global grid.', es: 'Una cuadrícula global completa.' } },
+export const EMPTY_PIXELS = () => Array<number>(PIXEL_GRID_SIZE * PIXEL_GRID_SIZE).fill(TRANSPARENT_PIXEL);
+export const DEFAULT_AVATAR: AvatarLoadout = { pixels: EMPTY_PIXELS(), effect: 'none' };
 
-  { key: 'forest', slot: 'border', achievement: null, name: { pt: 'Mata', en: 'Forest', es: 'Bosque' }, description: { pt: 'Verde profundo.', en: 'Deep green.', es: 'Verde profundo.' } },
-  { key: 'lime', slot: 'border', achievement: null, name: { pt: 'Lima', en: 'Lime', es: 'Lima' }, description: { pt: 'Verde luminoso.', en: 'Bright green.', es: 'Verde luminoso.' } },
-  { key: 'clay', slot: 'border', achievement: null, name: { pt: 'Argila', en: 'Clay', es: 'Arcilla' }, description: { pt: 'Terra avermelhada.', en: 'Red earth.', es: 'Tierra rojiza.' } },
-  { key: 'sun', slot: 'border', achievement: 'speed_75', name: { pt: 'Sol', en: 'Sun', es: 'Sol' }, description: { pt: 'Amarelo de campo.', en: 'Field yellow.', es: 'Amarillo de campo.' } },
-  { key: 'ink', slot: 'border', achievement: 'top_3', name: { pt: 'Tinta', en: 'Ink', es: 'Tinta' }, description: { pt: 'Contorno escuro preciso.', en: 'Precise dark outline.', es: 'Contorno oscuro preciso.' } },
-
-  { key: 'ink', slot: 'letter', achievement: null, name: { pt: 'Tinta', en: 'Ink', es: 'Tinta' }, description: { pt: 'Verde quase preto.', en: 'Near-black green.', es: 'Verde casi negro.' } },
-  { key: 'forest', slot: 'letter', achievement: null, name: { pt: 'Mata', en: 'Forest', es: 'Bosque' }, description: { pt: 'Verde institucional.', en: 'Institutional green.', es: 'Verde institucional.' } },
-  { key: 'paper', slot: 'letter', achievement: null, name: { pt: 'Papel', en: 'Paper', es: 'Papel' }, description: { pt: 'Branco quente com contorno.', en: 'Warm white with an outline.', es: 'Blanco cálido con contorno.' } },
-  { key: 'clay', slot: 'letter', achievement: 'precision_100', name: { pt: 'Argila', en: 'Clay', es: 'Arcilla' }, description: { pt: 'Vermelho terroso.', en: 'Earthy red.', es: 'Rojo terroso.' } },
-  { key: 'sun', slot: 'letter', achievement: 'top_1', name: { pt: 'Sol', en: 'Sun', es: 'Sol' }, description: { pt: 'Amarelo reservado a líderes.', en: 'Yellow reserved for leaders.', es: 'Amarillo reservado para líderes.' } },
-
-  { key: 'none', slot: 'effect', achievement: null, name: { pt: 'Sem efeito', en: 'No effect', es: 'Sin efecto' }, description: { pt: 'Avatar estático.', en: 'Static avatar.', es: 'Avatar estático.' } },
-  { key: 'contours', slot: 'effect', achievement: 'first_verified', name: { pt: 'Órbita', en: 'Orbit', es: 'Órbita' }, description: { pt: 'Um traço gira lentamente.', en: 'A line rotates slowly.', es: 'Una línea gira lentamente.' } },
-  { key: 'scan', slot: 'effect', achievement: 'speed_100', name: { pt: 'Varredura', en: 'Scan', es: 'Barrido' }, description: { pt: 'Pulso de leitura vertical.', en: 'A vertical reading pulse.', es: 'Un pulso de lectura vertical.' } },
-  { key: 'solar-pulse', slot: 'effect', achievement: 'top_1', name: { pt: 'Pulso solar', en: 'Solar pulse', es: 'Pulso solar' }, description: { pt: 'Brilho raro e contido.', en: 'A rare, restrained glow.', es: 'Un brillo raro y contenido.' } },
+export const EFFECTS: EffectItem[] = [
+  { key: 'none', achievement: null, name: { pt: 'Sem efeito', en: 'No effect', es: 'Sin efecto' }, description: { pt: 'Somente a sua pixel art.', en: 'Only your pixel art.', es: 'Solo tu pixel art.' } },
+  { key: 'orbit', achievement: 'first_verified', name: { pt: 'Órbita', en: 'Orbit', es: 'Órbita' }, description: { pt: 'Um traço percorre o avatar.', en: 'A line travels around the avatar.', es: 'Una línea recorre el avatar.' } },
+  { key: 'signal', achievement: 'speed_50', name: { pt: 'Sinal de campo', en: 'Field signal', es: 'Señal de campo' }, description: { pt: 'Um ponto de leitura pulsa.', en: 'A reading point pulses.', es: 'Un punto de lectura pulsa.' } },
+  { key: 'scan', achievement: 'speed_75', name: { pt: 'Varredura', en: 'Scan', es: 'Barrido' }, description: { pt: 'Uma faixa de leitura vertical.', en: 'A vertical reading band.', es: 'Una banda de lectura vertical.' } },
+  { key: 'resolution', achievement: 'speed_100', name: { pt: 'Alta resolução', en: 'High resolution', es: 'Alta resolución' }, description: { pt: 'Pixels externos entram em foco.', en: 'Outer pixels come into focus.', es: 'Los píxeles externos se enfocan.' } },
+  { key: 'precision', achievement: 'precision_100', name: { pt: 'Ponto de controle', en: 'Control point', es: 'Punto de control' }, description: { pt: 'Quatro marcas precisas.', en: 'Four precise control marks.', es: 'Cuatro marcas de control precisas.' } },
+  { key: 'reference', achievement: 'top_3', name: { pt: 'Referência', en: 'Reference', es: 'Referencia' }, description: { pt: 'Halo discreto de pódio.', en: 'A restrained podium halo.', es: 'Un halo de podio discreto.' } },
+  { key: 'solar-pulse', achievement: 'top_1', name: { pt: 'Pulso solar', en: 'Solar pulse', es: 'Pulso solar' }, description: { pt: 'Brilho reservado a líderes.', en: 'A glow reserved for leaders.', es: 'Un brillo reservado a líderes.' } },
+  { key: 'catalog', achievement: 'all_passages_attempted', name: { pt: 'Catálogo', en: 'Catalog', es: 'Catálogo' }, description: { pt: 'Marcas orbitais do acervo.', en: 'Collection marks in orbit.', es: 'Marcas orbitales del acervo.' } },
+  { key: 'atlas', achievement: 'all_passages_completed', name: { pt: 'Atlas completo', en: 'Complete atlas', es: 'Atlas completo' }, description: { pt: 'Coordenadas em movimento.', en: 'Coordinates in motion.', es: 'Coordenadas en movimiento.' } },
 ];
 
 export const ACHIEVEMENTS = [
@@ -51,10 +59,17 @@ export const ACHIEVEMENTS = [
 ] as const;
 
 export const REWARD_UI = {
-  pt: { button: 'Personalizar avatar', eyebrow: 'IDENTIDADE', title: 'Personalizar avatar', description: 'Escolha um padrão, as cores e um efeito. Itens especiais informam a conquista necessária.', patterns: 'Fundo', borderColors: 'Cor da borda', letterColors: 'Cor da inicial', effects: 'Efeito', selected: 'Selecionado', save: 'Salvar avatar', saving: 'Salvando…', saved: 'Avatar salvo', undo: 'Desfazer', signIn: 'Entre para salvar o avatar e desbloquear recompensas.', close: 'Fechar personalizador', unlockWith: 'Desbloqueie esta opção:', initialPreview: 'PRÉVIA', achievements: 'Conquistas', progress: 'Progresso', unlocked: 'Desbloqueado' },
-  en: { button: 'Customize avatar', eyebrow: 'IDENTITY', title: 'Customize avatar', description: 'Choose a pattern, colors, and an effect. Special items show the achievement they require.', patterns: 'Background', borderColors: 'Border color', letterColors: 'Initial color', effects: 'Effect', selected: 'Selected', save: 'Save avatar', saving: 'Saving…', saved: 'Avatar saved', undo: 'Undo', signIn: 'Sign in to save your avatar and unlock rewards.', close: 'Close customizer', unlockWith: 'Unlock this option:', initialPreview: 'PREVIEW', achievements: 'Achievements', progress: 'Progress', unlocked: 'Unlocked' },
-  es: { button: 'Personalizar avatar', eyebrow: 'IDENTIDAD', title: 'Personalizar avatar', description: 'Elige un patrón, los colores y un efecto. Los objetos especiales muestran el logro necesario.', patterns: 'Fondo', borderColors: 'Color del borde', letterColors: 'Color de la inicial', effects: 'Efecto', selected: 'Seleccionado', save: 'Guardar avatar', saving: 'Guardando…', saved: 'Avatar guardado', undo: 'Deshacer', signIn: 'Entra para guardar tu avatar y desbloquear recompensas.', close: 'Cerrar personalizador', unlockWith: 'Desbloquea esta opción:', initialPreview: 'VISTA PREVIA', achievements: 'Logros', progress: 'Progreso', unlocked: 'Desbloqueado' },
+  pt: { button: 'Criar avatar', eyebrow: 'ATELIÊ PIXEL', title: 'Desenhe seu avatar', description: 'Crie livremente em uma grade de 16 × 16. Pixels vazios são transparentes; apenas os efeitos dependem de conquistas.', editor: 'Desenho', effects: 'Efeitos conquistáveis', save: 'Salvar avatar', saving: 'Salvando…', saved: 'Avatar salvo', undoChanges: 'Desfazer alterações', signIn: 'Entre para salvar o desenho e desbloquear efeitos.', close: 'Fechar editor', unlockWith: 'Desbloqueie este efeito:', preview: 'PRÉVIA', rankingSize: 'TAMANHO NO RANKING', achievements: 'Conquistas', progress: 'Progresso', unlocked: 'Desbloqueado' },
+  en: { button: 'Create avatar', eyebrow: 'PIXEL STUDIO', title: 'Draw your avatar', description: 'Create freely on a 16 × 16 grid. Empty pixels are transparent; only effects require achievements.', editor: 'Drawing', effects: 'Unlockable effects', save: 'Save avatar', saving: 'Saving…', saved: 'Avatar saved', undoChanges: 'Undo changes', signIn: 'Sign in to save your drawing and unlock effects.', close: 'Close editor', unlockWith: 'Unlock this effect:', preview: 'PREVIEW', rankingSize: 'RANKING SIZE', achievements: 'Achievements', progress: 'Progress', unlocked: 'Unlocked' },
+  es: { button: 'Crear avatar', eyebrow: 'TALLER PÍXEL', title: 'Dibuja tu avatar', description: 'Crea libremente en una cuadrícula de 16 × 16. Los píxeles vacíos son transparentes; solo los efectos requieren logros.', editor: 'Dibujo', effects: 'Efectos desbloqueables', save: 'Guardar avatar', saving: 'Guardando…', saved: 'Avatar guardado', undoChanges: 'Deshacer cambios', signIn: 'Entra para guardar tu dibujo y desbloquear efectos.', close: 'Cerrar editor', unlockWith: 'Desbloquea este efecto:', preview: 'VISTA PREVIA', rankingSize: 'TAMAÑO EN EL RANKING', achievements: 'Logros', progress: 'Progreso', unlocked: 'Desbloqueado' },
 } as const;
 
-export function cosmeticsFor(slot: CosmeticSlot) { return COSMETICS.filter((item) => item.slot === slot); }
-export function isCosmeticUnlocked(item: CosmeticItem, achievements: Set<string>) { return item.achievement === null || achievements.has(item.achievement); }
+export function isAvatarCell(index: number) {
+  const row = Math.floor(index / PIXEL_GRID_SIZE);
+  const column = index % PIXEL_GRID_SIZE;
+  return ((row - 7.5) ** 2) + ((column - 7.5) ** 2) <= 64;
+}
+
+export function isEffectUnlocked(item: EffectItem, achievements: Set<string>) {
+  return item.achievement === null || achievements.has(item.achievement);
+}

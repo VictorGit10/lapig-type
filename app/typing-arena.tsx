@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { passages } from './content';
 import { LANGUAGE_LABELS, passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
+import { PixelAvatarEditor } from './pixel-avatar-editor';
 import { PlayerAvatar } from './player-avatar';
-import { ACHIEVEMENTS, COSMETIC_SLOTS, cosmeticsFor, DEFAULT_COSMETICS, type EquippedCosmetics, isCosmeticUnlocked, REWARD_UI } from './rewards';
+import { ACHIEVEMENTS, DEFAULT_AVATAR, EFFECTS, EMPTY_PIXELS, type AvatarLoadout, isEffectUnlocked, REWARD_UI } from './rewards';
 import {
   arenaBackendConfigured,
   arenaRequest,
@@ -24,7 +25,7 @@ import { TurnstileWidget } from './turnstile-widget';
 type Status = 'ready' | 'running' | 'finished';
 type Submission = 'idle' | 'local' | 'verifying' | 'accepted' | 'review' | 'rejected' | 'error';
 type AttemptEvent = { delta: number; correct: boolean; key: string; repeat: boolean };
-type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number; cosmetics?: EquippedCosmetics };
+type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number; cosmetics?: AvatarLoadout };
 type VerifiedResult = { grossWpm: number; accuracy: number; score: number; correctChars?: number; completed?: boolean; unlockedAchievements?: string[]; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
@@ -34,7 +35,7 @@ type PlayerProfile = {
   achievements: { key: string; unlockedAt: string }[];
   passageProgress: { passageId: string; passageVersion: number; attempts: number; bestScore: number; bestWpm: number; bestAccuracy: number; bestCorrectChars: number; completed: boolean; completedAt: string | null }[];
   stats: { practicedPassages: number; completedPassages: number; bestWpm: number; bestAccuracy: number; acceptedAttempts: number };
-  equipped: EquippedCosmetics;
+  equipped: AvatarLoadout;
 };
 
 const CHALLENGE_DURATION_MS = 60_000;
@@ -78,7 +79,7 @@ export function TypingArena() {
   const [rewardsOpen, setRewardsOpen] = useState(false);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
-  const [draftCosmetics, setDraftCosmetics] = useState<EquippedCosmetics>(DEFAULT_COSMETICS);
+  const [draftCosmetics, setDraftCosmetics] = useState<AvatarLoadout>(() => ({ ...DEFAULT_AVATAR, pixels: EMPTY_PIXELS() }));
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveComplete, setSaveComplete] = useState(false);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
@@ -342,7 +343,7 @@ export function TypingArena() {
 
   const openRewards = useCallback(() => {
     setAuthMenuOpen(false);
-    setDraftCosmetics(playerProfile?.equipped ?? DEFAULT_COSMETICS);
+    setDraftCosmetics(playerProfile?.equipped ?? { ...DEFAULT_AVATAR, pixels: EMPTY_PIXELS() });
     setSaveComplete(false);
     setLockedNotice(null);
     setRewardsOpen(true);
@@ -365,7 +366,7 @@ export function TypingArena() {
         body: JSON.stringify({ loadout: draftCosmetics }),
       }, true);
       if (!response.ok) throw new Error('save_failed');
-      const data = await response.json() as { equipped: EquippedCosmetics };
+      const data = await response.json() as { equipped: AvatarLoadout };
       setPlayerProfile((current) => current ? { ...current, equipped: data.equipped } : current);
       setDraftCosmetics(data.equipped);
       setSaveComplete(true);
@@ -531,8 +532,9 @@ export function TypingArena() {
   const remainingRankingRows = rankingRows.slice(3);
   const previewStatus = !arenaBackendConfigured ? copy.unavailable : leaderboard === null ? copy.loading : copy.updated;
   const achievementKeys = new Set(playerProfile?.achievements.map((item) => item.key) ?? []);
-  const equippedCosmetics = playerProfile?.equipped ?? DEFAULT_COSMETICS;
-  const loadoutChanged = COSMETIC_SLOTS.some((slot) => draftCosmetics[slot] !== equippedCosmetics[slot]);
+  const equippedCosmetics = playerProfile?.equipped ?? DEFAULT_AVATAR;
+  const loadoutChanged = draftCosmetics.effect !== equippedCosmetics.effect
+    || draftCosmetics.pixels.some((pixel, index) => pixel !== equippedCosmetics.pixels[index]);
 
   return (
     <main className="site-shell">
@@ -712,12 +714,13 @@ export function TypingArena() {
 
             <div className="customizer-layout">
               <aside className="customizer-stage">
-                <span>{rewardCopy.initialPreview}</span>
+                <span>{rewardCopy.preview}</span>
                 <div className="customizer-avatar-stage">
                   <i className="stage-grid" />
                   <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={draftCosmetics} className="rewards-avatar" />
                 </div>
                 <strong>{user?.name ?? 'LAPIG Type'}</strong>
+                <div className="ranking-size-preview"><span>{rewardCopy.rankingSize}</span><PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={draftCosmetics} className="avatar" /></div>
                 <div className="inventory-summary">
                   <div><span>{rewardCopy.achievements}</span><strong>{profileBusy ? '—' : achievementKeys.size}<small> / {ACHIEVEMENTS.length}</small></strong></div>
                   <div><span>{rewardCopy.progress}</span><strong>{playerProfile?.stats.practicedPassages ?? 0}<small> / {passages.length}</small></strong></div>
@@ -726,53 +729,56 @@ export function TypingArena() {
                 <button className="save-loadout" type="button" disabled={!user || saveBusy || !loadoutChanged} onClick={() => void saveLoadout()}>
                   {saveBusy ? rewardCopy.saving : saveComplete ? `✓ ${rewardCopy.saved}` : rewardCopy.save}
                 </button>
-                <button className="undo-loadout" type="button" disabled={!loadoutChanged} onClick={() => { setDraftCosmetics(equippedCosmetics); setSaveComplete(false); }}>{rewardCopy.undo}</button>
+                <button className="undo-loadout" type="button" disabled={!loadoutChanged} onClick={() => { setDraftCosmetics(equippedCosmetics); setSaveComplete(false); }}>{rewardCopy.undoChanges}</button>
               </aside>
 
               <div className="customizer-options">
-                {([
-                  ['avatar', rewardCopy.patterns],
-                  ['border', rewardCopy.borderColors],
-                  ['letter', rewardCopy.letterColors],
-                  ['effect', rewardCopy.effects],
-                ] as const).map(([slot, label]) => (
-                  <section className={`option-group option-group--${slot}`} key={slot}>
-                    <header><h3>{label}</h3><span>{cosmeticsFor(slot).length}</span></header>
-                    <div className="option-grid">
-                      {cosmeticsFor(slot).map((item) => {
-                        const unlocked = isCosmeticUnlocked(item, achievementKeys);
-                        const selected = draftCosmetics[item.slot] === item.key;
-                        const requirement = ACHIEVEMENTS.find((achievement) => achievement.key === item.achievement);
-                        const preview = { ...draftCosmetics, [item.slot]: item.key };
-                        const noticeKey = `${item.slot}:${item.key}`;
-                        return (
-                          <button
-                            className={`avatar-option ${selected ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}`}
-                            type="button"
-                            aria-disabled={!unlocked}
-                            aria-pressed={selected}
-                            onClick={() => {
-                              if (!unlocked) { setLockedNotice(noticeKey); return; }
-                              setDraftCosmetics(preview);
-                              setSaveComplete(false);
-                              setLockedNotice(null);
-                            }}
-                            key={noticeKey}
-                          >
-                            <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="option-avatar" />
-                            <span><strong>{item.name[language]}</strong><small>{item.description[language]}</small></span>
-                            <i aria-hidden="true">{selected ? '✓' : unlocked ? '+' : '◇'}</i>
-                            {!unlocked && requirement && (
-                              <em className={`option-requirement ${lockedNotice === noticeKey ? 'is-visible' : ''}`} role="note">
-                                <b>{rewardCopy.unlockWith}</b>{requirement.criteria[language]}
-                              </em>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
+                <section className="option-group option-group--editor">
+                  <header><h3>{rewardCopy.editor}</h3><span>16²</span></header>
+                  <PixelAvatarEditor
+                    language={language}
+                    name={user?.name ?? 'LAPIG Type'}
+                    pixels={draftCosmetics.pixels}
+                    onChange={(pixels) => { setDraftCosmetics((current) => ({ ...current, pixels })); setSaveComplete(false); }}
+                  />
+                </section>
+
+                <section className="option-group option-group--effects">
+                  <header><h3>{rewardCopy.effects}</h3><span>{EFFECTS.length}</span></header>
+                  <div className="effect-grid">
+                    {EFFECTS.map((item) => {
+                      const unlocked = isEffectUnlocked(item, achievementKeys);
+                      const selected = draftCosmetics.effect === item.key;
+                      const requirement = ACHIEVEMENTS.find((achievement) => achievement.key === item.achievement);
+                      const preview = { ...draftCosmetics, effect: item.key };
+                      const noticeKey = `effect:${item.key}`;
+                      return (
+                        <button
+                          className={`avatar-option effect-option ${selected ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}`}
+                          type="button"
+                          aria-disabled={!unlocked}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            if (!unlocked) { setLockedNotice(noticeKey); return; }
+                            setDraftCosmetics(preview);
+                            setSaveComplete(false);
+                            setLockedNotice(null);
+                          }}
+                          key={noticeKey}
+                        >
+                          <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="option-avatar" />
+                          <span><strong>{item.name[language]}</strong><small>{item.description[language]}</small></span>
+                          <i aria-hidden="true">{selected ? '✓' : unlocked ? '+' : '◇'}</i>
+                          {!unlocked && requirement && (
+                            <em className={`option-requirement ${lockedNotice === noticeKey ? 'is-visible' : ''}`} role="note">
+                              <b>{rewardCopy.unlockWith}</b>{requirement.criteria[language]}
+                            </em>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
               </div>
             </div>
           </section>

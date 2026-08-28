@@ -1,4 +1,4 @@
-import { DEFAULT_COSMETICS } from '../_shared/rewards.ts';
+import { DEFAULT_COSMETICS, normalizedAvatarPixels } from '../_shared/rewards.ts';
 import { adminClient, authenticatedUser, json, preflight } from '../_shared/http.ts';
 
 Deno.serve(async (request) => {
@@ -12,7 +12,7 @@ Deno.serve(async (request) => {
   const [achievementsResult, progressResult, cosmeticsResult] = await Promise.all([
     admin.from('user_achievements').select('achievement_key,unlocked_at').eq('user_id', user.id).order('unlocked_at'),
     admin.from('passage_progress').select('passage_id,passage_version,attempts,best_score,best_wpm,best_accuracy,best_correct_chars,completed,completed_at').eq('user_id', user.id).order('first_attempted_at'),
-    admin.from('profile_cosmetics').select('avatar_key,border_key,letter_key,effect_key').eq('user_id', user.id).maybeSingle(),
+    admin.from('profile_cosmetics').select('avatar_pixels,effect_key').eq('user_id', user.id).maybeSingle(),
   ]);
 
   if (achievementsResult.error || progressResult.error || cosmeticsResult.error) {
@@ -41,9 +41,7 @@ Deno.serve(async (request) => {
       acceptedAttempts: progress.reduce((sum, item) => sum + item.attempts, 0),
     },
     equipped: cosmeticsResult.data ? {
-      avatar: cosmeticsResult.data.avatar_key,
-      border: cosmeticsResult.data.border_key,
-      letter: cosmeticsResult.data.letter_key,
+      pixels: normalizedAvatarPixels(cosmeticsResult.data.avatar_pixels),
       effect: cosmeticsResult.data.effect_key,
     } : DEFAULT_COSMETICS,
   });

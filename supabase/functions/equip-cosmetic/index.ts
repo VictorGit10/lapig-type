@@ -1,10 +1,7 @@
-import { cosmeticRequirement, DEFAULT_COSMETICS, type CosmeticSlot } from '../_shared/rewards.ts';
+import { cosmeticRequirement, DEFAULT_COSMETICS, normalizedAvatarPixels, type CosmeticSlot } from '../_shared/rewards.ts';
 import { adminClient, authenticatedUser, json, preflight, publicDisplayName } from '../_shared/http.ts';
 
-const SLOT_COLUMN: Record<CosmeticSlot, 'avatar_key' | 'border_key' | 'letter_key' | 'effect_key'> = {
-  avatar: 'avatar_key',
-  border: 'border_key',
-  letter: 'letter_key',
+const SLOT_COLUMN: Record<CosmeticSlot, 'effect_key'> = {
   effect: 'effect_key',
 };
 
@@ -17,7 +14,7 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => null) as { slot?: string; key?: string } | null;
   const slot = body?.slot;
   const key = body?.key;
-  if ((slot !== 'avatar' && slot !== 'border' && slot !== 'letter' && slot !== 'effect') || typeof key !== 'string') {
+  if (slot !== 'effect' || typeof key !== 'string') {
     return json(request, { error: 'invalid_cosmetic' }, 400);
   }
 
@@ -48,14 +45,12 @@ Deno.serve(async (request) => {
   if (equipError) return json(request, { error: 'database_error' }, 500);
 
   const { data: equipped, error: readError } = await admin.from('profile_cosmetics')
-    .select('avatar_key,border_key,letter_key,effect_key').eq('user_id', user.id).single();
+    .select('avatar_pixels,effect_key').eq('user_id', user.id).single();
   if (readError || !equipped) return json(request, { error: 'database_error' }, 500);
 
   return json(request, {
     equipped: {
-      avatar: equipped.avatar_key ?? DEFAULT_COSMETICS.avatar,
-      border: equipped.border_key ?? DEFAULT_COSMETICS.border,
-      letter: equipped.letter_key ?? DEFAULT_COSMETICS.letter,
+      pixels: normalizedAvatarPixels(equipped.avatar_pixels),
       effect: equipped.effect_key ?? DEFAULT_COSMETICS.effect,
     },
   });
