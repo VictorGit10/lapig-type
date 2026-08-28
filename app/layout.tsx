@@ -16,13 +16,13 @@ export const metadata: Metadata = {
     siteName: 'LAPIG Type',
     locale: 'pt_BR',
     type: 'website',
-    images: [{ url: 'https://victorgit10.github.io/lapig-type/og.png', width: 1734, height: 907, alt: 'LAPIG Type — treino de digitação com textos científicos' }],
+    images: [{ url: 'https://victorgit10.github.io/lapig-type/og.jpg', width: 1200, height: 628, type: 'image/jpeg', alt: 'LAPIG Type — treino de digitação com textos científicos' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'LAPIG Type — Treino de digitação',
     description: 'Treine digitação por 60 segundos com textos científicos selecionados pelo LAPIG.',
-    images: ['https://victorgit10.github.io/lapig-type/og.png'],
+    images: ['https://victorgit10.github.io/lapig-type/og.jpg'],
   },
 };
 
