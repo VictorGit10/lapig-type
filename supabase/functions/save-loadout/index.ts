@@ -2,7 +2,7 @@ import { cosmeticRequirement, DEFAULT_COSMETICS, type CosmeticSlot } from '../_s
 import { adminClient, authenticatedUser, json, preflight, publicDisplayName } from '../_shared/http.ts';
 
 type Loadout = Record<CosmeticSlot, string>;
-const SLOTS: CosmeticSlot[] = ['avatar', 'mark', 'palette', 'frame', 'effect'];
+const SLOTS: CosmeticSlot[] = ['avatar', 'border', 'letter', 'effect'];
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return preflight(request);
@@ -39,16 +39,14 @@ Deno.serve(async (request) => {
   const { data: saved, error: saveError } = await admin.from('profile_cosmetics').upsert({
     user_id: user.id,
     avatar_key: loadout.avatar,
-    mark_key: loadout.mark,
-    palette_key: loadout.palette,
-    frame_key: loadout.frame,
+    border_key: loadout.border,
+    letter_key: loadout.letter,
     effect_key: loadout.effect,
     updated_at: now,
-  }, { onConflict: 'user_id' }).select('avatar_key,mark_key,palette_key,frame_key,effect_key').single();
+  }, { onConflict: 'user_id' }).select('avatar_key,border_key,letter_key,effect_key').single();
   if (saveError || !saved) return json(request, { error: 'database_error' }, 500);
 
   return json(request, { equipped: {
-    avatar: saved.avatar_key, mark: saved.mark_key, palette: saved.palette_key,
-    frame: saved.frame_key, effect: saved.effect_key,
+    avatar: saved.avatar_key, border: saved.border_key, letter: saved.letter_key, effect: saved.effect_key,
   } });
 });

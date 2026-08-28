@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { passages } from './content';
 import { LANGUAGE_LABELS, passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
 import { PlayerAvatar } from './player-avatar';
-import { ACHIEVEMENTS, COSMETICS, COSMETIC_SLOTS, DEFAULT_COSMETICS, type CosmeticSlot, type EquippedCosmetics, isCosmeticUnlocked, REWARD_UI } from './rewards';
+import { ACHIEVEMENTS, COSMETIC_SLOTS, cosmeticsFor, DEFAULT_COSMETICS, type EquippedCosmetics, isCosmeticUnlocked, REWARD_UI } from './rewards';
 import {
   arenaBackendConfigured,
   arenaRequest,
@@ -78,11 +78,10 @@ export function TypingArena() {
   const [rewardsOpen, setRewardsOpen] = useState(false);
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile | null>(null);
   const [profileBusy, setProfileBusy] = useState(false);
-  const [customizerView, setCustomizerView] = useState<'inventory' | 'discover' | 'achievements'>('inventory');
-  const [customizerSlot, setCustomizerSlot] = useState<'all' | CosmeticSlot>('all');
   const [draftCosmetics, setDraftCosmetics] = useState<EquippedCosmetics>(DEFAULT_COSMETICS);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveComplete, setSaveComplete] = useState(false);
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const authControlRef = useRef<HTMLDivElement>(null);
   const authUsernameRef = useRef<HTMLInputElement>(null);
@@ -344,9 +343,8 @@ export function TypingArena() {
   const openRewards = useCallback(() => {
     setAuthMenuOpen(false);
     setDraftCosmetics(playerProfile?.equipped ?? DEFAULT_COSMETICS);
-    setCustomizerView('inventory');
-    setCustomizerSlot('all');
     setSaveComplete(false);
+    setLockedNotice(null);
     setRewardsOpen(true);
     inputRef.current?.blur();
     if (user) void loadPlayerProfile(true);
@@ -534,12 +532,6 @@ export function TypingArena() {
   const previewStatus = !arenaBackendConfigured ? copy.unavailable : leaderboard === null ? copy.loading : copy.updated;
   const achievementKeys = new Set(playerProfile?.achievements.map((item) => item.key) ?? []);
   const equippedCosmetics = playerProfile?.equipped ?? DEFAULT_COSMETICS;
-  const unlockedCosmetics = COSMETICS.filter((item) => isCosmeticUnlocked(item, achievementKeys));
-  const customizerItems = COSMETICS.filter((item) => {
-    if (customizerSlot !== 'all' && item.slot !== customizerSlot) return false;
-    const unlocked = isCosmeticUnlocked(item, achievementKeys);
-    return customizerView === 'inventory' ? unlocked : customizerView === 'discover' ? !unlocked : false;
-  });
   const loadoutChanged = COSMETIC_SLOTS.some((slot) => draftCosmetics[slot] !== equippedCosmetics[slot]);
 
   return (
@@ -720,21 +712,15 @@ export function TypingArena() {
 
             <div className="customizer-layout">
               <aside className="customizer-stage">
-                <span>{rewardCopy.loadout}</span>
+                <span>{rewardCopy.initialPreview}</span>
                 <div className="customizer-avatar-stage">
                   <i className="stage-grid" />
                   <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={draftCosmetics} className="rewards-avatar" />
                 </div>
                 <strong>{user?.name ?? 'LAPIG Type'}</strong>
-                <div className="loadout-labels">
-                  {COSMETIC_SLOTS.map((slot) => {
-                    const item = COSMETICS.find((candidate) => candidate.slot === slot && candidate.key === draftCosmetics[slot]);
-                    return <span key={slot}>{item?.name[language]}</span>;
-                  })}
-                </div>
                 <div className="inventory-summary">
-                  <div><span>{rewardCopy.progress}</span><strong>{profileBusy ? '—' : unlockedCosmetics.length}<small> / {COSMETICS.length}</small></strong><p>{rewardCopy.items}</p></div>
-                  <div><span>{playerProfile?.stats.practicedPassages ?? 0} / {passages.length}</span><p>{rewardCopy.passages}</p></div>
+                  <div><span>{rewardCopy.achievements}</span><strong>{profileBusy ? '—' : achievementKeys.size}<small> / {ACHIEVEMENTS.length}</small></strong></div>
+                  <div><span>{rewardCopy.progress}</span><strong>{playerProfile?.stats.practicedPassages ?? 0}<small> / {passages.length}</small></strong></div>
                 </div>
                 {!user && <p className="rewards-signin">{rewardCopy.signIn}</p>}
                 <button className="save-loadout" type="button" disabled={!user || saveBusy || !loadoutChanged} onClick={() => void saveLoadout()}>
@@ -743,54 +729,50 @@ export function TypingArena() {
                 <button className="undo-loadout" type="button" disabled={!loadoutChanged} onClick={() => { setDraftCosmetics(equippedCosmetics); setSaveComplete(false); }}>{rewardCopy.undo}</button>
               </aside>
 
-              <div className="customizer-browser">
-                <div className="customizer-tabs" role="tablist">
-                  {(['inventory', 'discover', 'achievements'] as const).map((view) => (
-                    <button type="button" role="tab" aria-selected={customizerView === view} className={customizerView === view ? 'is-active' : ''} onClick={() => setCustomizerView(view)} key={view}>{rewardCopy[view]}</button>
-                  ))}
-                </div>
-
-                {customizerView !== 'achievements' ? <>
-                  <div className="customizer-filters" aria-label={rewardCopy.inventory}>
-                    {(['all', ...COSMETIC_SLOTS] as const).map((slot) => {
-                      const labels = { all: rewardCopy.all, avatar: rewardCopy.avatars, mark: rewardCopy.marks, palette: rewardCopy.palettes, frame: rewardCopy.frames, effect: rewardCopy.effects };
-                      return <button type="button" className={customizerSlot === slot ? 'is-active' : ''} onClick={() => setCustomizerSlot(slot)} key={slot}>{labels[slot]}</button>;
-                    })}
-                  </div>
-                  {customizerItems.length ? <div className="inventory-grid">
-                    {customizerItems.map((item) => {
-                      const unlocked = isCosmeticUnlocked(item, achievementKeys);
-                      const selected = draftCosmetics[item.slot] === item.key;
-                      const requirement = ACHIEVEMENTS.find((achievement) => achievement.key === item.achievement);
-                      const preview = { ...draftCosmetics, [item.slot]: item.key };
-                      return (
-                        <button
-                          className={`inventory-item ${selected ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}`}
-                          type="button"
-                          disabled={!unlocked}
-                          aria-pressed={selected}
-                          onClick={() => { setDraftCosmetics(preview); setSaveComplete(false); }}
-                          key={`${item.slot}-${item.key}`}
-                        >
-                          <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="inventory-avatar" />
-                          <span><strong>{item.name[language]}</strong><small>{unlocked ? item.description[language] : requirement?.criteria[language]}</small></span>
-                          <i>{selected ? '✓' : unlocked ? '+' : '◇'}</i>
-                        </button>
-                      );
-                    })}
-                  </div> : <p className="customizer-empty">{rewardCopy.empty}</p>}
-                </> : <div className="achievement-grid">
-                  {ACHIEVEMENTS.map((achievement) => {
-                    const unlocked = achievementKeys.has(achievement.key);
-                    return (
-                      <article className={unlocked ? 'is-unlocked' : 'is-locked'} key={achievement.key}>
-                        <b>{achievement.icon}</b>
-                        <div><strong>{achievement.title[language]}</strong><p>{achievement.criteria[language]}</p></div>
-                        <span>{unlocked ? '✓' : '◇'}</span>
-                      </article>
-                    );
-                  })}
-                </div>}
+              <div className="customizer-options">
+                {([
+                  ['avatar', rewardCopy.patterns],
+                  ['border', rewardCopy.borderColors],
+                  ['letter', rewardCopy.letterColors],
+                  ['effect', rewardCopy.effects],
+                ] as const).map(([slot, label]) => (
+                  <section className={`option-group option-group--${slot}`} key={slot}>
+                    <header><h3>{label}</h3><span>{cosmeticsFor(slot).length}</span></header>
+                    <div className="option-grid">
+                      {cosmeticsFor(slot).map((item) => {
+                        const unlocked = isCosmeticUnlocked(item, achievementKeys);
+                        const selected = draftCosmetics[item.slot] === item.key;
+                        const requirement = ACHIEVEMENTS.find((achievement) => achievement.key === item.achievement);
+                        const preview = { ...draftCosmetics, [item.slot]: item.key };
+                        const noticeKey = `${item.slot}:${item.key}`;
+                        return (
+                          <button
+                            className={`avatar-option ${selected ? 'is-selected' : ''} ${unlocked ? '' : 'is-locked'}`}
+                            type="button"
+                            aria-disabled={!unlocked}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              if (!unlocked) { setLockedNotice(noticeKey); return; }
+                              setDraftCosmetics(preview);
+                              setSaveComplete(false);
+                              setLockedNotice(null);
+                            }}
+                            key={noticeKey}
+                          >
+                            <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="option-avatar" />
+                            <span><strong>{item.name[language]}</strong><small>{item.description[language]}</small></span>
+                            <i aria-hidden="true">{selected ? '✓' : unlocked ? '+' : '◇'}</i>
+                            {!unlocked && requirement && (
+                              <em className={`option-requirement ${lockedNotice === noticeKey ? 'is-visible' : ''}`} role="note">
+                                <b>{rewardCopy.unlockWith}</b>{requirement.criteria[language]}
+                              </em>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             </div>
           </section>
