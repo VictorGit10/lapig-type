@@ -7,21 +7,21 @@ const body = Hanken_Grotesk({ variable: '--font-body', subsets: ['latin'] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://victorgit10.github.io/lapig-type/'),
-  title: 'LAPIG Type — Treino de digitação',
-  description: 'Treine digitação por 60 segundos com textos científicos selecionados pelo LAPIG.',
+  title: 'LAPIG Type — Desafio de digitação',
+  description: 'Um desafio de 60 segundos de digitação com textos acadêmicos do LAPIG.',
   openGraph: {
-    title: 'LAPIG Type — Treino de digitação',
-    description: 'Treine digitação por 60 segundos com textos científicos selecionados pelo LAPIG.',
+    title: 'LAPIG Type — Desafio de digitação',
+    description: 'Um desafio de 60 segundos de digitação com textos acadêmicos do LAPIG.',
     url: 'https://victorgit10.github.io/lapig-type/',
     siteName: 'LAPIG Type',
     locale: 'pt_BR',
     type: 'website',
-    images: [{ url: 'https://victorgit10.github.io/lapig-type/og.jpg', width: 1200, height: 628, type: 'image/jpeg', alt: 'LAPIG Type — treino de digitação com textos científicos' }],
+    images: [{ url: 'https://victorgit10.github.io/lapig-type/og.jpg', width: 1200, height: 628, type: 'image/jpeg', alt: 'LAPIG Type — desafio de digitação com textos acadêmicos do LAPIG' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'LAPIG Type — Treino de digitação',
-    description: 'Treine digitação por 60 segundos com textos científicos selecionados pelo LAPIG.',
+    title: 'LAPIG Type — Desafio de digitação',
+    description: 'Um desafio de 60 segundos de digitação com textos acadêmicos do LAPIG.',
     images: ['https://victorgit10.github.io/lapig-type/og.jpg'],
   },
 };
