@@ -1,11 +1,14 @@
 import { DEFAULT_COSMETICS, normalizedAvatarPixels } from '../_shared/rewards.ts';
-import { adminClient, json, preflight } from '../_shared/http.ts';
+import { adminClient, authenticatedUser, json, preflight } from '../_shared/http.ts';
+
+const RANKING_TOP_SIZE = 20;
 
 type ResultRow = {
   user_id: string;
   gross_wpm: number;
   accuracy: number;
   score: number;
+  placement: number;
 };
 
 Deno.serve(async (request) => {
@@ -13,22 +16,14 @@ Deno.serve(async (request) => {
   if (request.method !== 'GET') return json(request, { error: 'method_not_allowed' }, 405);
 
   const admin = adminClient();
-  const { data, error } = await admin
-    .from('results')
-    .select('user_id,gross_wpm,accuracy,score')
-    .eq('trust_status', 'accepted')
-    .order('score', { ascending: false })
-    .order('accuracy', { ascending: false })
-    .order('gross_wpm', { ascending: false })
-    .limit(200);
+  const user = await authenticatedUser(request);
+  const { data, error } = await admin.rpc('get_typing_leaderboard', {
+    p_user_id: user?.id ?? null,
+    p_limit: RANKING_TOP_SIZE,
+  });
   if (error) return json(request, { error: 'database_error' }, 500);
 
-  const seen = new Set<string>();
-  const best = ((data ?? []) as ResultRow[]).filter((row) => {
-    if (seen.has(row.user_id)) return false;
-    seen.add(row.user_id);
-    return true;
-  }).slice(0, 20);
+  const best = (data ?? []) as ResultRow[];
 
   const ids = best.map((row) => row.user_id);
   const [profileResult, cosmeticResult] = ids.length ? await Promise.all([
@@ -44,13 +39,14 @@ Deno.serve(async (request) => {
   }]));
 
   return json(request, {
-    leaderboard: best.map((row, index) => ({
-      rank: index + 1,
+    leaderboard: best.map((row) => ({
+      rank: Number(row.placement),
       name: names.get(row.user_id) ?? 'Participante',
       wpm: row.gross_wpm,
       accuracy: row.accuracy,
       score: row.score,
       cosmetics: cosmetics.get(row.user_id) ?? DEFAULT_COSMETICS,
+      isCurrentUser: row.user_id === user?.id,
     })),
   }, 200);
 });

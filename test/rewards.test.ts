@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ACHIEVEMENTS } from '../app/rewards.ts';
 import { cosmeticRequirement, DEFAULT_COSMETICS, EMPTY_PIXELS, isValidAvatarPixels } from '../supabase/functions/_shared/rewards.ts';
 
 test('keeps the base avatar available without an achievement', () => {
@@ -12,6 +13,13 @@ test('ties every special effect to a server-verifiable achievement', () => {
   assert.equal(cosmeticRequirement('effect', 'scan'), 'speed_75');
   assert.equal(cosmeticRequirement('effect', 'solar-pulse'), 'top_1');
   assert.equal(cosmeticRequirement('effect', 'atlas'), 'all_passages_completed');
+});
+
+test('uses a realistic three-step speed progression', () => {
+  const speedCriteria = ACHIEVEMENTS
+    .filter((achievement) => achievement.key.startsWith('speed_'))
+    .map((achievement) => achievement.criteria.pt);
+  assert.deepEqual(speedCriteria, ['Alcance 40 PPM.', 'Alcance 60 PPM.', 'Alcance 90 PPM.']);
 });
 
 test('rejects cosmetic keys and slots outside the server allowlist', () => {

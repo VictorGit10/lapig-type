@@ -26,7 +26,7 @@ import { TurnstileWidget } from './turnstile-widget';
 type Status = 'ready' | 'running' | 'finished';
 type Submission = 'idle' | 'local' | 'verifying' | 'accepted' | 'review' | 'rejected' | 'error';
 type AttemptEvent = { delta: number; correct: boolean; key: string; repeat: boolean };
-type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number; cosmetics?: AvatarLoadout };
+type LeaderboardRow = { rank: number; name: string; wpm: number; accuracy: number; score?: number; cosmetics?: AvatarLoadout; isCurrentUser?: boolean };
 type VerifiedResult = { grossWpm: number; accuracy: number; score: number; correctChars?: number; completed?: boolean; unlockedAchievements?: string[]; trustStatus: 'accepted' | 'review' | 'rejected'; ranked: boolean };
 type RankedAttempt = { attemptId: string; attemptToken: string };
 type ArenaUser = { id: string; name: string };
@@ -40,6 +40,7 @@ type PlayerProfile = {
 };
 
 const CHALLENGE_DURATION_MS = 60_000;
+const RANKING_TOP_SIZE = 20;
 
 const shuffledPassageIndexes = () => {
   const indexes = passages.map((_, index) => index);
@@ -190,15 +191,16 @@ export function TypingArena() {
 
   const loadLeaderboard = useCallback(async () => {
     if (!arenaBackendConfigured) return;
+    const requestRanking = (authenticated: boolean) => arenaRequest('leaderboard', { method: 'GET', cache: 'no-store' }, authenticated);
     try {
-      const response = await arenaRequest('leaderboard', { method: 'GET', cache: 'no-store' });
+      const response = await (user ? requestRanking(true).catch(() => requestRanking(false)) : requestRanking(false));
       if (!response.ok) throw new Error('leaderboard_failed');
       const data = await response.json() as { leaderboard: LeaderboardRow[] };
       setLeaderboard(data.leaderboard);
     } catch {
       setLeaderboard([]);
     }
-  }, []);
+  }, [user]);
 
   const loadPlayerProfile = useCallback(async (syncCustomizer = false) => {
     if (!user || !arenaBackendConfigured) {
@@ -687,14 +689,22 @@ export function TypingArena() {
           </div>
           {remainingRankingRows.length > 0 && (
             <ol className="ranking-list">
-              {remainingRankingRows.map((player) => (
-                <li key={player.rank}>
-                  <span className="rank">{String(player.rank).padStart(2, '0')}</span>
-                  <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="avatar" />
-                  <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% {copy.precision}</small></span>
-                  <strong className="score">{player.wpm}<small>{copy.wpm}</small></strong>
-                </li>
-              ))}
+              {remainingRankingRows.map((player) => {
+                const outsideTop = Boolean(player.isCurrentUser) && player.rank > RANKING_TOP_SIZE;
+                return (
+                  <li
+                    className={`${player.isCurrentUser ? 'is-current-user' : ''}${outsideTop ? ' is-personal-outside' : ''}`}
+                    aria-current={player.isCurrentUser ? 'true' : undefined}
+                    key={player.rank}
+                  >
+                    {outsideTop && <span className="ranking-personal-label">{copy.yourPosition}</span>}
+                    <span className="rank">{String(player.rank).padStart(2, '0')}</span>
+                    <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="avatar" />
+                    <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% {copy.precision}</small></span>
+                    <strong className="score">{player.wpm}<small>{copy.wpm}</small></strong>
+                  </li>
+                );
+              })}
             </ol>
           )}
         </> : <p className="ranking-empty">{arenaBackendConfigured ? copy.emptyRanking : copy.unavailableRanking}</p>}
@@ -765,9 +775,9 @@ export function TypingArena() {
                           <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="option-avatar" />
                           <span><strong>{item.name[language]}</strong><small>{item.description[language]}</small></span>
                           <i aria-hidden="true">{selected ? '✓' : unlocked ? '+' : '◇'}</i>
-                          {!unlocked && requirement && (
+                          {requirement && (
                             <em className={`option-requirement ${lockedNotice === noticeKey ? 'is-visible' : ''}`} role="note">
-                              <b>{rewardCopy.unlockWith}</b>{requirement.criteria[language]}
+                              <b>{unlocked ? rewardCopy.unlockedWith : rewardCopy.unlockWith}</b>{requirement.criteria[language]}
                             </em>
                           )}
                         </button>

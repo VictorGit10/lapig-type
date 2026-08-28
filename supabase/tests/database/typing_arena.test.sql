@@ -19,7 +19,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'authenticated',
-    'public.finalize_typing_attempt(uuid,uuid,uuid,integer,integer,integer,integer,integer,text,jsonb)',
+    'public.finalize_typing_attempt(uuid,uuid,uuid,integer,integer,integer,integer,integer,integer,integer,text,jsonb)',
     'execute'
   ),
   'authenticated clients cannot call the finalization RPC'
@@ -78,6 +78,8 @@ select is(
     69,
     50000,
     2,
+    260,
+    6,
     'accepted',
     '[]'::jsonb
   ),
@@ -95,6 +97,8 @@ select is(
     69,
     50000,
     2,
+    260,
+    6,
     'accepted',
     '[]'::jsonb
   ),
