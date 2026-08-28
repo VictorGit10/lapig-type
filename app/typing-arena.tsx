@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { passages } from './content';
-import { LANGUAGE_LABELS, passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
+import { passwordRemaining, rankMark, secondsRemaining, type Language, UI_COPY } from './i18n';
+import { LanguageSwitcher } from './language-switcher';
 import { PixelAvatarEditor } from './pixel-avatar-editor';
 import { PlayerAvatar } from './player-avatar';
 import { ACHIEVEMENTS, DEFAULT_AVATAR, EFFECTS, EMPTY_PIXELS, type AvatarLoadout, isEffectUnlocked, REWARD_UI } from './rewards';
@@ -549,12 +550,7 @@ export function TypingArena() {
           <a className="active" href="#treino">{copy.training}</a><a href="#ranking">{copy.ranking}</a><a href="https://github.com/VictorGit10/lapig-type" target="_blank" rel="noreferrer">{copy.code}</a>
         </nav>
         <div className="top-actions">
-          <label className="language-control">
-            <span className="sr-only">{copy.language}</span>
-            <select aria-label={copy.language} value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
-              {(Object.keys(LANGUAGE_LABELS) as Language[]).map((code) => <option key={code} value={code}>{code.toUpperCase()} · {LANGUAGE_LABELS[code]}</option>)}
-            </select>
-          </label>
+          <LanguageSwitcher language={language} label={copy.language} onChange={setLanguage} />
           <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
             <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
               {user ? user.name : copy.enter} <span>{user ? '•' : '↗'}</span>
@@ -602,9 +598,9 @@ export function TypingArena() {
           <p>{copy.heroDescription}</p>
           <a className="hero-start" href="#treino">{copy.startNow} <span>↓</span></a>
         </div>
-        <aside className="podium-preview" aria-labelledby="podium-preview-title">
+        <aside className="podium-preview" aria-label={copy.ranking}>
           <header>
-            <div><span>{copy.ranking.toUpperCase()}</span><h2 id="podium-preview-title">{copy.podium}</h2></div>
+            <span>{copy.ranking.toUpperCase()}</span>
             <b>{previewStatus}</b>
           </header>
           {leaderboard === null && arenaBackendConfigured ? <p className="podium-empty podium-empty--loading">{copy.loadingRanking}</p> : podiumRows.length > 0 ? (
