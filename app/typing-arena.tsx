@@ -72,7 +72,7 @@ export function TypingArena() {
   const [user, setUser] = useState<ArenaUser | null>(null);
   const [authMenuOpen, setAuthMenuOpen] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
-  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -159,7 +159,7 @@ export function TypingArena() {
     window.setTimeout(focusInput, 0);
   }, [focusInput]);
 
-  const openAuthMenu = useCallback((mode: AuthMode = 'signin') => {
+  const openAuthMenu = useCallback((mode: AuthMode = 'signup') => {
     setAuthMode(mode);
     setAuthFeedback(null);
     setAuthMenuOpen(true);
@@ -286,6 +286,7 @@ export function TypingArena() {
         event.preventDefault();
         setRewardsOpen(false);
       } else if (status === 'finished') {
+        if ((event.target as Element | null)?.closest?.('.result-signup')) return;
         event.preventDefault();
         startNextChallenge();
       }
@@ -384,6 +385,9 @@ export function TypingArena() {
     finishedRef.current = true;
     setElapsed(CHALLENGE_DURATION_MS);
     setStatus('finished');
+    setAuthMenuOpen(false);
+    setAuthFeedback(null);
+    setAuthMode('signup');
     void finishRankedAttempt(CHALLENGE_DURATION_MS, mistakesRef.current);
   }, [finishRankedAttempt]);
 
@@ -523,6 +527,37 @@ export function TypingArena() {
 
   const passwordCharactersRemaining = Math.max(0, 10 - authPassword.length);
 
+  const selectAuthMode = (mode: AuthMode) => {
+    setAuthMode(mode);
+    setAuthFeedback(null);
+    setCaptchaToken(null);
+  };
+
+  const accountTabs = (
+    <div className="auth-tabs" role="tablist" aria-label={copy.rankingAccess}>
+      <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => selectAuthMode('signup')}>{copy.createAccountTab}</button>
+      <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => selectAuthMode('signin')}>{copy.signInTab}</button>
+    </div>
+  );
+
+  const accountFeedback = authFeedback && (
+    <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>
+  );
+
+  const accountForm = ({ idPrefix, usernameRef, submitLabel }: { idPrefix: string; usernameRef?: React.RefObject<HTMLInputElement | null>; submitLabel?: string }) => (
+    <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
+      <label htmlFor={`${idPrefix}-username`}>{copy.username}</label>
+      <input ref={usernameRef} id={`${idPrefix}-username`} type="text" autoComplete="username" minLength={3} maxLength={32} required value={authUsername} onChange={(event) => { setAuthUsername(event.target.value); setAuthFeedback(null); }} placeholder={copy.usernamePlaceholder} disabled={authBusy || !arenaBackendConfigured} />
+      <span className="field-hint">{copy.usernameHint}</span>
+      <label htmlFor={`${idPrefix}-password`}>{copy.password}</label>
+      <input id={`${idPrefix}-password`} type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => { setAuthPassword(event.target.value); setAuthFeedback(null); }} placeholder={copy.passwordPlaceholder} disabled={authBusy || !arenaBackendConfigured} />
+      <span className={`field-hint ${authPassword.length > 0 && passwordCharactersRemaining === 0 ? 'is-valid' : ''}`}>{authPassword.length === 0 ? copy.passwordEmpty : passwordCharactersRemaining > 0 ? passwordRemaining(language, passwordCharactersRemaining) : copy.passwordReady}</span>
+      <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
+      <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? copy.captchaReady : copy.captchaPending}</span>
+      <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? copy.creatingAccount : copy.signingIn) : (submitLabel ?? (authMode === 'signup' ? copy.createAccount : copy.signIn))}</button>
+    </form>
+  );
+
   const renderedText = useMemo(() => passage.text.split('').map((character, index) => {
     const state = index < cursor ? 'typed' : index === cursor ? 'current' : 'pending';
     return <span ref={index === cursor ? currentCharacterRef : undefined} className={`character character--${state}`} key={`${index}-${character}`}>{character}</span>;
@@ -538,6 +573,7 @@ export function TypingArena() {
   const equippedCosmetics = playerProfile?.equipped ?? DEFAULT_AVATAR;
   const loadoutChanged = draftCosmetics.effect !== equippedCosmetics.effect
     || draftCosmetics.pixels.some((pixel, index) => pixel !== equippedCosmetics.pixels[index]);
+  const unlockedEffects = EFFECTS.filter((item) => isEffectUnlocked(item, achievementKeys)).length;
 
   return (
     <main className="site-shell">
@@ -554,34 +590,21 @@ export function TypingArena() {
         <div className="top-actions">
           <LanguageSwitcher language={language} label={copy.language} onChange={setLanguage} />
           <div ref={authControlRef} className="auth-control" onClick={(event) => event.stopPropagation()}>
-            <button className="login-button" type="button" onClick={() => { setAuthMenuOpen((value) => !value); setAuthFeedback(null); }} aria-expanded={authMenuOpen}>
+            <button className="login-button" type="button" onClick={() => { if (authMenuOpen) closeAuthMenu(); else openAuthMenu('signup'); }} aria-expanded={authMenuOpen}>
               {user ? user.name : copy.enter} <span>{user ? '•' : '↗'}</span>
             </button>
             {authMenuOpen && <div className="auth-menu">
             {user ? <>
               <div className="auth-menu-head"><small>{copy.linkedResults}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
               <strong>{user.name}</strong>
-              {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
+              {accountFeedback}
               <button className="auth-rewards-button" type="button" onClick={openRewards}>◌ {rewardCopy.button}</button>
               <button type="button" disabled={authBusy} onClick={() => void signOut()}>{copy.signOut}</button>
             </> : <>
               <div className="auth-menu-head"><small>{copy.enterRanking}</small><button type="button" aria-label={copy.closeMenu} onClick={closeAuthMenu}>×</button></div>
-              <div className="auth-tabs" role="tablist" aria-label={copy.rankingAccess}>
-                <button type="button" role="tab" aria-selected={authMode === 'signin'} className={authMode === 'signin' ? 'is-active' : ''} onClick={() => { setAuthMode('signin'); setAuthFeedback(null); setCaptchaToken(null); }}>{copy.signIn}</button>
-                <button type="button" role="tab" aria-selected={authMode === 'signup'} className={authMode === 'signup' ? 'is-active' : ''} onClick={() => { setAuthMode('signup'); setAuthFeedback(null); setCaptchaToken(null); }}>{copy.createAccount}</button>
-              </div>
-              {authFeedback && <p className={`auth-feedback auth-feedback--${authFeedback.tone}`} role={authFeedback.tone === 'error' ? 'alert' : 'status'}>{authFeedback.text}</p>}
-              <form noValidate onSubmit={(event) => void beginPasswordAuth(event)}>
-                <label htmlFor="ranking-username">{copy.username}</label>
-                <input ref={authUsernameRef} id="ranking-username" type="text" autoComplete="username" minLength={3} maxLength={32} required value={authUsername} onChange={(event) => { setAuthUsername(event.target.value); setAuthFeedback(null); }} placeholder={copy.usernamePlaceholder} disabled={authBusy || !arenaBackendConfigured} />
-                <span className="field-hint">{copy.usernameHint}</span>
-                <label htmlFor="ranking-password">{copy.password}</label>
-                <input id="ranking-password" type="password" autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'} minLength={10} required value={authPassword} onChange={(event) => { setAuthPassword(event.target.value); setAuthFeedback(null); }} placeholder={copy.passwordPlaceholder} disabled={authBusy || !arenaBackendConfigured} />
-                <span className={`field-hint ${authPassword.length > 0 && passwordCharactersRemaining === 0 ? 'is-valid' : ''}`}>{authPassword.length === 0 ? copy.passwordEmpty : passwordCharactersRemaining > 0 ? passwordRemaining(language, passwordCharactersRemaining) : copy.passwordReady}</span>
-                <TurnstileWidget action={authMode} resetSignal={captchaResetSignal} siteKey={turnstileSiteKey} onToken={handleCaptchaToken} />
-                <span className={`captcha-status ${captchaToken ? 'is-ready' : ''}`} aria-live="polite">{captchaToken ? copy.captchaReady : copy.captchaPending}</span>
-                <button type="submit" disabled={authBusy || !arenaBackendConfigured}>{authBusy ? (authMode === 'signup' ? copy.creatingAccount : copy.signingIn) : (authMode === 'signup' ? copy.createAccount : copy.signIn)}</button>
-              </form>
+              {accountTabs}
+              {accountFeedback}
+              {accountForm({ idPrefix: 'ranking', usernameRef: authUsernameRef })}
               <p>{copy.noEmail}</p>
               {(googleAuthEnabled || githubAuthEnabled) && <span className="auth-divider">{copy.continueWith}</span>}
               {googleAuthEnabled && <button type="button" disabled={authBusy || !arenaBackendConfigured} onClick={() => void beginSignIn('google')}>{copy.continueGoogle}</button>}
@@ -714,7 +737,12 @@ export function TypingArena() {
         <div className="rewards-overlay" role="dialog" aria-modal="true" aria-labelledby="rewards-title" onClick={(event) => { if (event.target === event.currentTarget) closeRewards(); }}>
           <section className="rewards-panel">
             <header className="rewards-head">
-              <div><span>{rewardCopy.eyebrow}</span><h2 id="rewards-title">{rewardCopy.title}</h2><p>{rewardCopy.description}</p></div>
+              <div>
+                <span>{rewardCopy.eyebrow}</span>
+                <h2 id="rewards-title">{rewardCopy.title}</h2>
+                <p>{rewardCopy.description}</p>
+                <ol className="rewards-steps">{rewardCopy.steps.map((step) => <li key={step}>{step}</li>)}</ol>
+              </div>
               <button type="button" aria-label={rewardCopy.close} onClick={closeRewards}>×</button>
             </header>
 
@@ -731,7 +759,12 @@ export function TypingArena() {
                   <div><span>{rewardCopy.achievements}</span><strong>{profileBusy ? '—' : achievementKeys.size}<small> / {ACHIEVEMENTS.length}</small></strong></div>
                   <div><span>{rewardCopy.progress}</span><strong>{playerProfile?.stats.practicedPassages ?? 0}<small> / {passages.length}</small></strong></div>
                 </div>
-                {!user && <p className="rewards-signin">{rewardCopy.signIn}</p>}
+                {!user && (
+                  <div className="rewards-signin">
+                    <p>{rewardCopy.signIn}</p>
+                    <button type="button" onClick={() => { closeRewards(); openAuthMenu('signup'); }}>{rewardCopy.signInCta}</button>
+                  </div>
+                )}
                 <button className="save-loadout" type="button" disabled={!user || saveBusy || !loadoutChanged} onClick={() => void saveLoadout()}>
                   {saveBusy ? rewardCopy.saving : saveComplete ? `✓ ${rewardCopy.saved}` : rewardCopy.save}
                 </button>
@@ -741,6 +774,7 @@ export function TypingArena() {
               <div className="customizer-options">
                 <section className="option-group option-group--editor">
                   <header><h3>{rewardCopy.editor}</h3><span>16²</span></header>
+                  <p className="option-note">{rewardCopy.editorHint}</p>
                   <PixelAvatarEditor
                     language={language}
                     name={user?.name ?? 'LAPIG Type'}
@@ -750,7 +784,8 @@ export function TypingArena() {
                 </section>
 
                 <section className="option-group option-group--effects">
-                  <header><h3>{rewardCopy.effects}</h3><span>{EFFECTS.length}</span></header>
+                  <header><h3>{rewardCopy.effects}</h3><span>{unlockedEffects}/{EFFECTS.length}</span></header>
+                  <p className="option-note">{rewardCopy.effectsHint.replace('{unlocked}', String(unlockedEffects)).replace('{total}', String(EFFECTS.length))}</p>
                   <div className="effect-grid">
                     {EFFECTS.map((item) => {
                       const unlocked = isEffectUnlocked(item, achievementKeys);
@@ -773,7 +808,11 @@ export function TypingArena() {
                           key={noticeKey}
                         >
                           <PlayerAvatar name={user?.name ?? 'LAPIG Type'} cosmetics={preview} className="option-avatar" />
-                          <span><strong>{item.name[language]}</strong><small>{item.description[language]}</small></span>
+                          <span>
+                            <strong>{item.name[language]}</strong>
+                            <small>{item.description[language]}</small>
+                            <b className="option-status">{selected ? `✓ ${rewardCopy.statusSelected}` : unlocked ? rewardCopy.statusAvailable : `🔒 ${rewardCopy.statusLocked}`}</b>
+                          </span>
                           <i aria-hidden="true">{selected ? '✓' : unlocked ? '+' : '◇'}</i>
                           {requirement && (
                             <em className={`option-requirement ${lockedNotice === noticeKey ? 'is-visible' : ''}`} role="note">
@@ -813,8 +852,19 @@ export function TypingArena() {
                 <strong>{verifiedResult?.unlockedAchievements?.map((key) => ACHIEVEMENTS.find((achievement) => achievement.key === key)?.title[language]).filter(Boolean).join(' · ')}</strong>
               </div>
             )}
-            {submission === 'local' && <button className="result-login" type="button" onClick={() => { startNextChallenge(false); openAuthMenu(); }}>{copy.enterToCompete}</button>}
-            <button type="button" onClick={() => startNextChallenge()}>{copy.nextText} <span>→</span></button>
+            {submission === 'local' && arenaBackendConfigured && (user ? (
+              <p className="result-account-ready" role="status">✓ {copy.resultAccountReady}</p>
+            ) : (
+              <section className="result-signup">
+                <h3>{copy.resultSignupTitle}</h3>
+                <p className="result-signup-lead">{copy.resultSignupDetail}</p>
+                {accountTabs}
+                {accountFeedback}
+                {accountForm({ idPrefix: 'result', submitLabel: authMode === 'signup' ? copy.resultSignupSubmit : copy.resultSigninSubmit })}
+                <p className="result-signup-note">{copy.noEmail}</p>
+              </section>
+            ))}
+            <button type="button" onClick={() => startNextChallenge()}>{submission === 'local' && user ? copy.rankedNextText : copy.nextText} <span>→</span></button>
           </section>
         </div>
       )}
