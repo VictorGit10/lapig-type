@@ -57,6 +57,9 @@ const formatTime = (milliseconds: number, roundUp = false) => {
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
+const leaderboardScore = (player: LeaderboardRow) => player.score
+  ?? Math.max(0, Math.round(player.wpm * Math.pow(player.accuracy / 100, 2)));
+
 export function TypingArena() {
   const [language, setLanguage] = useState<Language>('pt');
   const [passageIndex, setPassageIndex] = useState(0);
@@ -635,7 +638,7 @@ export function TypingArena() {
                   <span className="mini-medal">{rankMark(language, player.rank)}</span>
                   <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="mini-avatar" />
                   <strong>{player.name}</strong>
-                  <small>{player.wpm} {copy.wpm}</small>
+                  <small className="mini-score">{leaderboardScore(player)} {copy.points}</small>
                 </article>
               ))}
             </div>
@@ -698,6 +701,35 @@ export function TypingArena() {
           </div>
         </header>
 
+        <details className="ranking-method">
+          <summary>
+            <span className="ranking-method__index">01—03</span>
+            <span className="ranking-method__heading">
+              <small>{copy.scoringMethod}</small>
+              <strong>{copy.scoringTitle}</strong>
+            </span>
+            <code>{copy.scoringFormula}</code>
+            <span className="ranking-method__toggle">
+              <span className="ranking-method__open">{copy.scoringOpen}</span>
+              <span className="ranking-method__close">{copy.scoringClose}</span>
+              <i aria-hidden="true">+</i>
+            </span>
+          </summary>
+          <div className="ranking-method__body">
+            <ol className="ranking-method__steps">
+              <li><span>01</span><div><strong>{copy.scoringWpmTitle}</strong><p>{copy.scoringWpmDetail}</p></div></li>
+              <li><span>02</span><div><strong>{copy.scoringAccuracyTitle}</strong><p>{copy.scoringAccuracyDetail}</p></div></li>
+              <li><span>03</span><div><strong>{copy.scoringPointsTitle}</strong><p>{copy.scoringPointsDetail}</p></div></li>
+            </ol>
+            <div className="ranking-method__example">
+              <span>{copy.scoringExample}</span>
+              <strong>{copy.scoringExampleFormula}</strong>
+              <small>{copy.scoringExampleDetail}</small>
+            </div>
+            <p className="ranking-method__rule">{copy.scoringOrder}</p>
+          </div>
+        </details>
+
         {leaderboard === null && arenaBackendConfigured ? <p className="ranking-empty ranking-empty--loading">{copy.loadingRanking}</p> : rankingRows.length > 0 ? <>
           <div className="full-podium" aria-label={copy.topThree}>
             {orderedPodiumRows.map((player) => (
@@ -705,8 +737,8 @@ export function TypingArena() {
                 <span className="podium-position">{rankMark(language, player.rank)} {copy.place}</span>
                 <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="podium-avatar" />
                 <strong>{player.name}</strong>
-                <span>{player.wpm} <small>{copy.wpm}</small></span>
-                <small>{player.accuracy}% {copy.precision}</small>
+                <span className="podium-score">{leaderboardScore(player)} <small>{copy.points}</small></span>
+                <div className="podium-performance"><span>{player.wpm} {copy.wpm}</span><i /><span>{player.accuracy}%</span></div>
               </article>
             ))}
           </div>
@@ -723,8 +755,8 @@ export function TypingArena() {
                     {outsideTop && <span className="ranking-personal-label">{copy.yourPosition}</span>}
                     <span className="rank">{String(player.rank).padStart(2, '0')}</span>
                     <PlayerAvatar name={player.name} cosmetics={player.cosmetics} className="avatar" />
-                    <span className="player"><strong>{player.name}</strong><small>{player.accuracy}% {copy.precision}</small></span>
-                    <strong className="score">{player.wpm}<small>{copy.wpm}</small></strong>
+                    <span className="player"><strong>{player.name}</strong><small>{player.wpm} {copy.wpm}<i />{player.accuracy}%</small></span>
+                    <strong className="score" aria-label={`${copy.score}: ${leaderboardScore(player)} ${copy.points}`}>{leaderboardScore(player)}<small>{copy.points}</small></strong>
                   </li>
                 );
               })}
